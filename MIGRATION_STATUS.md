@@ -1,0 +1,44 @@
+# Estado de migracion Flutter
+
+Proyecto generado en `controller_app_flutter` a partir de la app Android Java/Kotlin existente.
+
+## Incluido
+
+- App Flutter compilable para Android con `applicationId` original: `interrapidisimo.controllerapp`.
+- Version de app migrada a formato Flutter: `1.1109.136+1109136`.
+- Assets base: logo, imagen del login y fuentes Montserrat/Prospero.
+- Pantallas base: login, home, notificaciones, ambientes, rutas Android inventariadas.
+- Modulos iniciales: Vender, Entregar, Recoger, Asignar envios, Mis Pagos, Estado Cuenta, Mis Mensajeros, Yaap, Reimprimir, Anular, Bloques, Enrutamiento, Auditoria y PrePago.
+- Matriz de ambientes tomada de `app/src/main/res/values/strings.xml`.
+- Permisos Android principales migrados desde el `AndroidManifest.xml` nativo.
+- Login real conectado contra `Seguridad/AuthenticaUsuarioControllerApp`, con validacion de version, Base64, MD5, AES-256 compatible con Android, canal nativo para `ANDROID_ID` y secreto AES, headers HTTP nativos y persistencia `sqflite`.
+- Persistencia posterior al login: credenciales locales, tokens, roles, modulos, informacion de usuario, ubicacion autorizada, estado de sesion y estado de sincronizacion local.
+- Sincronizacion inicial migrada al flujo por archivos de Android: esquemas `SincronizadorDatos/ObtenerEsquema/true`, esquema de producto, descarga HTTPS de zips S3 (`Sincronizacion.zip`, `Producto_PRD.zip` y archivos filtrados), extraccion local y carga de `.txt` con `INSERT OR REPLACE` por lotes.
+- Mapeo de `SyncSchema` corregido contra el contrato real de API: `BatchSize`, `Error`, `Filtro`, `NombreTabla`, `NumeroCampos`, `Pk` y `QueryCreacion`.
+- Feature login separado en `lib/features/login`: fachada `login.dart`, `presentation/login_page.dart`, `data/models`, `data/datasources`, `data/repositories` y `data/services`.
+- Feature Vender separado en `lib/features/vender`: flujo de admision automatica por pasos, vistas independientes (`Datos envio`, `Liquidacion`, `Remitente`, `Destinatario`, `Resumen`), controlador de flujo, repositorio local de tarifas/catalogos/suministros y repositorio remoto para preenvio, guia, token Torre Direcciones, cliente contado, georreferenciacion y recarga de suministros.
+- Componentes compartidos en `lib/shared`: bridge nativo, configuracion de API Controller, cliente HTTP base con headers nativos y cifrado Controller.
+- Firebase Cloud Messaging migrado para login: inicializacion Firebase, obtencion de token FCM con reintentos y regeneracion, envio en `TokenFirebase` del login, envio en `TokenDispositivo` al registrar dispositivo, persistencia local y escucha de `onTokenRefresh`.
+- Header publico `IdKey` migrado desde Android: consulta `Autenticacion/GenerarTokenTemporal`, arma payload `Token`/`IdKey`, cifra AES/PBKDF2 compatible con `Encryptor.kt` y lo agrega a `getUserInfo` y sincronizacion inicial de Controller.
+- Extraccion ZIP de sincronizacion ajustada para validar rutas inseguras con canonicalizacion estable sin depender de symlinks de Android.
+
+## Validacion
+
+```powershell
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+APK generado:
+
+```text
+build/app/outputs/flutter-apk/app-debug.apk
+```
+
+## Pendiente funcional
+
+- Migrar el resto de entidades Room/SQLite a `sqflite` o Isar modulo por modulo.
+- Completar el cierre online de admision/facturacion/impresion de Vender despues del registro offline inicial.
+- Reimplementar flujos de impresion Bluetooth, firma, camara, mapas, recepcion de notificaciones FCM y WorkManager.
+- Portar DTOs/repositorios por modulo y reemplazar los datos de muestra de las pantallas.

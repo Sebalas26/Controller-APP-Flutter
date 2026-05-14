@@ -1,0 +1,56 @@
+{
+  "project_info": {
+    "project_number": "282680260582",
+    "firebase_url": "https://controller-app.firebaseio.com",
+    "project_id": "controller-app",
+    "storage_bucket": "controller-app.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:282680260582:android:5a1f525cb060aa0e",
+        "android_client_info": {
+          "package_name": "interrapidisimo.controllerapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "282680260582-h99trf9ssvb8i2rttjn80c8s1ntfan2d.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "interrapidisimo.controllerapp",
+            "certificate_hash": "d670935503240b0bd790c02b180499bbb77834a6"
+          }
+        },
+        {
+          "client_id": "282680260582-bdiq5npp9vtshgrs94uparjj9thvp4g8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "interrapidisimo.controllerapp",
+            "certificate_hash": "4fd0c0ecd5255677bfcf41c00e1443c364f3e1d7"
+          }
+        },
+        {
+          "client_id": "282680260582-cjc7jan0dftvpmpjut5sqof8lka35pmh.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDDfvV9vOlVXizjh-FG6GP9_EwVxyB3eps"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "282680260582-cjc7jan0dftvpmpjut5sqof8lka35pmh.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
