@@ -5,11 +5,15 @@ class PostLoginSyncService {
     required this.apiClient,
     required this.localDatabase,
     ControllerFileSyncService? fileSyncService,
-  }) : _fileSyncService = fileSyncService ?? ControllerFileSyncService();
+    TorreDireccionesSyncService? torreDireccionesSyncService,
+  }) : _fileSyncService = fileSyncService ?? ControllerFileSyncService(),
+       _torreDireccionesSyncService =
+           torreDireccionesSyncService ?? TorreDireccionesSyncService();
 
   final ControllerApiClient apiClient;
   final ControllerLocalDatabase localDatabase;
   final ControllerFileSyncService _fileSyncService;
+  final TorreDireccionesSyncService _torreDireccionesSyncService;
 
   Future<LocalSyncStatus> synchronize({
     required ControllerApiConfig config,
@@ -48,10 +52,23 @@ class PostLoginSyncService {
       tableCount = allSchemas
           .where((schema) => schema.tableName.trim().isNotEmpty)
           .length;
+      var torreMessage = '';
+      try {
+        final torreTables = await _torreDireccionesSyncService.synchronize(
+          apiClient: apiClient,
+          config: config,
+          localDatabase: localDatabase,
+          appInformation: appInformation,
+          onProgress: onProgress,
+        );
+        tableCount += torreTables;
+      } on Object catch (error) {
+        torreMessage = ' Torre Direcciones parcial: $error';
+      }
 
       final completed = LocalSyncStatus(
         completed: true,
-        message: 'Sincronizacion completada',
+        message: 'Sincronizacion completada.$torreMessage',
         startedAt: startedAt,
         finishedAt: DateTime.now(),
         tables: tableCount,

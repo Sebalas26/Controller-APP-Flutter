@@ -270,6 +270,109 @@ class ControllerLocalDatabase {
     });
   }
 
+  Future<bool> hasTorreDirectionRegistry() async {
+    try {
+      final db = await database;
+      final rows = await db.rawQuery(
+        'SELECT COUNT(*) AS total FROM torre_direction_tables',
+      );
+      if (rows.isEmpty) return false;
+      final total = rows.first['total'];
+      if (total is int) return total > 0;
+      if (total is num) return total > 0;
+      return int.tryParse(total?.toString() ?? '') != 0;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<void> saveTorreSchemasAndCreateTables(
+    List<TorreDirectionSchema> schemas,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final schema in schemas) {
+        if (schema.createQuery.trim().isNotEmpty) {
+          try {
+            await txn.execute(schema.createQuery);
+          } on Object {
+            // Android continua aunque una tabla de Torre falle al crearse.
+          }
+        }
+        await txn.insert('torre_direction_tables', {
+          'table_name': schema.tableName,
+          'has_service_center_filter': schema.hasServiceCenterFilter ? 1 : 0,
+          'json': jsonEncode(schema.toJson()),
+          'updated_at': schema.updatedAt,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+  }
+
+  Future<List<String>> torreDirectionTableNames() async {
+    final db = await database;
+    final rows = await db.query('torre_direction_tables');
+    return rows
+        .map((row) => _dbString(row['table_name']).trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
+  }
+
+  Future<String> frameworkParameter(String code) async {
+    try {
+      final db = await database;
+      final columns = await _columnsFor(db, 'ParametrosFramework');
+      if (columns.isEmpty) return '';
+      final codeColumns = [
+        'Codigo',
+        'PAR_IdParametro',
+        'PAR_Codigo',
+        'Nombre',
+        'PFR_Nombre',
+        'Parametro',
+      ].where(columns.contains).toList();
+      final valueColumns = [
+        'Valor',
+        'PAR_Valor',
+        'PAR_ValorParametro',
+        'PFR_Valor',
+        'ValorParametro',
+        'Descripcion',
+      ].where(columns.contains).toList();
+      if (codeColumns.isEmpty || valueColumns.isEmpty) return '';
+      for (final codeColumn in codeColumns) {
+        final rows = await db.query(
+          'ParametrosFramework',
+          columns: [valueColumns.first],
+          where: '$codeColumn = ?',
+          whereArgs: [code],
+          limit: 1,
+        );
+        if (rows.isNotEmpty) {
+          return _dbString(rows.first[valueColumns.first]);
+        }
+      }
+    } on Object {
+      return '';
+    }
+    return '';
+  }
+
+  Future<void> executeSyncStatements(List<String> statements) async {
+    if (statements.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final statement in statements) {
+        if (statement.trim().isEmpty) continue;
+        try {
+          await txn.execute(statement);
+        } on Object {
+          // El flujo nativo tolera fallos puntuales por lote.
+        }
+      }
+    });
+  }
+
   Future<bool> tableHasRows(String tableName) async {
     try {
       final db = await database;
@@ -283,6 +386,17 @@ class ControllerLocalDatabase {
       return int.tryParse(total?.toString() ?? '') != 0;
     } on Object {
       return false;
+    }
+  }
+
+  Future<Set<String>> _columnsFor(Database db, String tableName) async {
+    try {
+      final rows = await db.rawQuery(
+        'PRAGMA table_info("${tableName.replaceAll('"', '""')}")',
+      );
+      return rows.map((row) => _dbString(row['name'])).toSet();
+    } on Object {
+      return const {};
     }
   }
 
@@ -519,6 +633,13 @@ CREATE TABLE IF NOT EXISTS sync_schemas (
   batch_size INTEGER,
   filter TEXT,
   json TEXT
+)''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS torre_direction_tables (
+  table_name TEXT PRIMARY KEY,
+  has_service_center_filter INTEGER,
+  json TEXT,
+  updated_at TEXT
 )''');
     await db.execute('''
 CREATE TABLE IF NOT EXISTS sync_status (

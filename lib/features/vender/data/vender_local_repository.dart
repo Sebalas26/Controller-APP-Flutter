@@ -27,14 +27,14 @@ class VenderLocalRepository {
         'NombreCompletoLocalidad',
         'NombreLocalidad',
       ],
-      limit: 180,
+      limit: 5000,
     );
     final deliveryTypes = await _loadOptions(
       db,
       tableCandidates: const ['TipoEntrega_MEN'],
       idColumns: const ['TIE_IdTipoEntrega'],
       labelColumns: const ['TIE_Descripcion'],
-      limit: 20,
+      limit: 500,
     );
     final paymentMethods = await _loadPaymentMethods(db);
     final shippingTypes = await _loadOptions(
@@ -42,7 +42,7 @@ class VenderLocalRepository {
       tableCandidates: const ['TipoEnvio_TAR'],
       idColumns: const ['TEN_IdTipoEnvio'],
       labelColumns: const ['TEN_Nombre', 'TEN_Descripcion'],
-      limit: 50,
+      limit: 500,
     );
     final services = await _loadOptions(
       db,
@@ -58,35 +58,35 @@ class VenderLocalRepository {
         'HSM_NombreCorto',
         'HSM_Alias',
       ],
-      limit: 80,
+      limit: 1000,
     );
     final addressTypes = await _loadOptions(
       db,
       tableCandidates: const ['TipoDireccion'],
       idColumns: const ['TDI_IdTipoDireccion'],
       labelColumns: const ['TDI_Descripcion'],
-      limit: 60,
+      limit: 1000,
     );
     final propertyTypes = await _loadOptions(
       db,
       tableCandidates: const ['TipoViviendaEntrega_CLI'],
       idColumns: const ['TVE_IdVivienda', 'TVE_IdTipoVivienda'],
       labelColumns: const ['TVE_NombreVivienda', 'TVE_Descripcion'],
-      limit: 60,
+      limit: 1000,
     );
     final identificationTypes = await _loadOptions(
       db,
       tableCandidates: const ['TipoIdentificacion_PAR'],
       idColumns: const ['TID_IdTipoIdentificacion', 'TII_IdTipoIdentificacion'],
       labelColumns: const ['TID_Descripcion', 'TII_Descripcion'],
-      limit: 40,
+      limit: 500,
     );
     final packages = await _loadOptions(
       db,
       tableCandidates: const ['Producto_PRD', 'Empaque_MEN'],
       idColumns: const ['PRD_IdProducto', 'EMP_IdEmpaque'],
       labelColumns: const ['PRD_Nombre', 'PRD_Descripcion', 'EMP_Descripcion'],
-      limit: 80,
+      limit: 1000,
     );
 
     return VenderCatalogs(

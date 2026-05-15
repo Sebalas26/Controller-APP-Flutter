@@ -16,6 +16,11 @@ class ControllerApiClient {
   static const _schemaPath = 'SincronizadorDatos/ObtenerEsquema/true';
   static const _productSchemaPath =
       'SincronizadorDatos/ObtenerEsquemaProducto/Producto_PRD';
+  static const _torreTokenPath = 'autorizador';
+  static const _torreSchemaPath = 'Sincronizacion/ObtenerTablas';
+  static const _torreTokenUser = 'user-cognitooauth2';
+  static const _torreTokenPassword = 'SW50ZXIyMDIxKg==';
+  static const _torreHeaderSecurity = '53Bw898tB4U2CkgQb3x2d9NWRf8d92';
 
   final ControllerHttpClient _httpClient;
   final ControllerIdKeyProvider _idKeyProvider;
@@ -129,6 +134,47 @@ class ControllerApiClient {
     return SyncBatchRecord.fromJson(json);
   }
 
+  Future<String> fetchTorreDireccionesToken(ControllerApiConfig config) async {
+    final response = await _client(config.geoRefTokenBaseUrl).post<dynamic>(
+      _torreTokenPath,
+      data: {'Usuario': _torreTokenUser, 'Password': _torreTokenPassword},
+      options: Options(headers: {'HeaderSecurity': _torreHeaderSecurity}),
+    );
+    final json = _asMap(response.data);
+    final token = _findString(json, const [
+      'IdToken',
+      'idToken',
+      'Token',
+      'token',
+    ]);
+    if (token.trim().isEmpty) {
+      throw const LoginException(
+        'No fue posible obtener token de Torre Direcciones.',
+      );
+    }
+    return token;
+  }
+
+  Future<List<TorreDirectionSchema>> fetchTorreDirectionSchemas({
+    required ControllerApiConfig config,
+    required String idToken,
+  }) async {
+    final response = await _client(config.geoDireccionBaseUrl).get<dynamic>(
+      _torreSchemaPath,
+      options: Options(headers: {'Authorization': 'Bearer $idToken'}),
+    );
+    final list = response.data is List
+        ? response.data as List
+        : jsonDecode(_responseText(response.data)) as List;
+    return list
+        .whereType<Object?>()
+        .map(_asMap)
+        .whereType<Map<String, dynamic>>()
+        .map(TorreDirectionSchema.fromJson)
+        .where((schema) => schema.tableName.trim().isNotEmpty)
+        .toList();
+  }
+
   Dio _client(
     String baseUrl, {
     AppInformation? appInformation,
@@ -161,6 +207,27 @@ class ControllerApiClient {
         .whereType<Map<String, dynamic>>()
         .map(SyncSchema.fromJson)
         .toList();
+  }
+
+  String _findString(Map<String, dynamic>? json, List<String> keys) {
+    if (json == null) return '';
+    for (final key in keys) {
+      final value =
+          json[key] ?? json[_lowerFirst(key)] ?? json[key.toLowerCase()];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        return value.toString();
+      }
+    }
+    for (final value in json.values) {
+      if (value is Map<String, dynamic>) {
+        final found = _findString(value, keys);
+        if (found.trim().isNotEmpty) return found;
+      } else if (value is Map) {
+        final found = _findString(Map<String, dynamic>.from(value), keys);
+        if (found.trim().isNotEmpty) return found;
+      }
+    }
+    return '';
   }
 
   Options get _plainResponse => _httpClient.plainResponse;

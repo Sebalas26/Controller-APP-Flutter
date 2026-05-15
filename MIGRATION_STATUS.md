@@ -21,6 +21,8 @@ Proyecto generado en `controller_app_flutter` a partir de la app Android Java/Ko
 - Firebase Cloud Messaging migrado para login: inicializacion Firebase, obtencion de token FCM con reintentos y regeneracion, envio en `TokenFirebase` del login, envio en `TokenDispositivo` al registrar dispositivo, persistencia local y escucha de `onTokenRefresh`.
 - Header publico `IdKey` migrado desde Android: consulta `Autenticacion/GenerarTokenTemporal`, arma payload `Token`/`IdKey`, cifra AES/PBKDF2 compatible con `Encryptor.kt` y lo agrega a `getUserInfo` y sincronizacion inicial de Controller.
 - Extraccion ZIP de sincronizacion ajustada para validar rutas inseguras con canonicalizacion estable sin depender de symlinks de Android.
+- Sincronizacion post-login de Torre Direcciones agregada como en `NavigationViewModel`: obtiene token de Torre, consulta `Sincronizacion/ObtenerTablas`, crea esquemas locales, lee credenciales AWS desde `ParametrosFramework`, las descifra y descarga zips por centro de servicio para cargar registros locales.
+- Selectores de catalogos de Vender convertidos a busqueda por nombre/id y catalogos grandes ampliados para evitar cortes de listas como `Localidad_PAR`.
 
 ## Validacion
 

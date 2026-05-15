@@ -544,6 +544,47 @@ class SyncBatchRecord {
   }
 }
 
+class TorreDirectionSchema {
+  const TorreDirectionSchema({
+    required this.tableName,
+    required this.filter,
+    required this.createQuery,
+    required this.fieldCount,
+    required this.updatedAt,
+  });
+
+  final String tableName;
+  final String filter;
+  final String createQuery;
+  final int fieldCount;
+  final String updatedAt;
+
+  bool get hasServiceCenterFilter => filter.trim().isNotEmpty;
+
+  factory TorreDirectionSchema.fromJson(Map<String, dynamic> json) {
+    return TorreDirectionSchema(
+      tableName: _readAnyString(json, const ['nombreTabla', 'NombreTabla']),
+      filter: _readAnyString(json, const ['filtro', 'Filtro']),
+      createQuery: _readAnyString(json, const ['queryCreate', 'QueryCreate']),
+      fieldCount: _readAnyInt(json, const ['numeroColumnas', 'NumeroColumnas']),
+      updatedAt: _readAnyString(json, const [
+        'fechaCreacionActualizacion',
+        'FechaCreacionActualizacion',
+      ]),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'nombreTabla': tableName,
+      'filtro': filter,
+      'queryCreate': createQuery,
+      'numeroColumnas': fieldCount,
+      'fechaCreacionActualizacion': updatedAt,
+    };
+  }
+}
+
 class LocalSyncStatus {
   const LocalSyncStatus({
     required this.completed,

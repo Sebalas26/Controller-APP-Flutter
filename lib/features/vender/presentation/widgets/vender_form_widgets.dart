@@ -113,19 +113,36 @@ class VenderCatalogDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectedValue = _matchingValue();
-    return DropdownButtonFormField<CatalogOption>(
-      initialValue: selectedValue,
-      items: options
-          .map(
-            (option) => DropdownMenuItem<CatalogOption>(
-              value: option,
-              child: Text(option.label, overflow: TextOverflow.ellipsis),
-            ),
-          )
-          .toList(),
-      onChanged: options.isEmpty ? null : onChanged,
-      decoration: InputDecoration(labelText: label),
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: options.isEmpty ? null : () => _openSelector(context),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: const Icon(Icons.search),
+        ),
+        child: Text(
+          selectedValue?.label ?? 'Seleccione',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: options.isEmpty
+                ? Theme.of(context).disabledColor
+                : const Color(0xFF212529),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
     );
+  }
+
+  Future<void> _openSelector(BuildContext context) async {
+    final selected = await showDialog<CatalogOption>(
+      context: context,
+      builder: (context) =>
+          _CatalogSearchDialog(label: label, options: options, value: value),
+    );
+    if (selected != null) onChanged(selected);
   }
 
   CatalogOption? _matchingValue() {
@@ -133,6 +150,127 @@ class VenderCatalogDropdown extends StatelessWidget {
       if (option.id == value?.id) return option;
     }
     return null;
+  }
+}
+
+class _CatalogSearchDialog extends StatefulWidget {
+  const _CatalogSearchDialog({
+    required this.label,
+    required this.options,
+    required this.value,
+  });
+
+  final String label;
+  final List<CatalogOption> options;
+  final CatalogOption? value;
+
+  @override
+  State<_CatalogSearchDialog> createState() => _CatalogSearchDialogState();
+}
+
+class _CatalogSearchDialogState extends State<_CatalogSearchDialog> {
+  final _query = TextEditingController();
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final options = _filteredOptions();
+    return Dialog(
+      insetPadding: const EdgeInsets.all(18),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.label,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                    tooltip: 'Cerrar',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _query,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Filtrar por nombre',
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: options.isEmpty
+                    ? const VenderEmptyState(
+                        icon: Icons.search_off,
+                        title: 'Sin resultados',
+                        message: 'No hay coincidencias para el filtro.',
+                      )
+                    : ListView.separated(
+                        itemCount: options.length,
+                        separatorBuilder: (context, index) =>
+                            const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final option = options[index];
+                          final selected = option.id == widget.value?.id;
+                          return ListTile(
+                            dense: true,
+                            leading: Icon(
+                              selected
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_unchecked,
+                              color: selected
+                                  ? const Color(0xFF2569B3)
+                                  : const Color(0xFF696F79),
+                            ),
+                            title: Text(
+                              option.label,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: option.id.trim().isEmpty
+                                ? null
+                                : Text(option.id),
+                            onTap: () => Navigator.of(context).pop(option),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<CatalogOption> _filteredOptions() {
+    final query = _query.text.trim().toLowerCase();
+    final source = query.isEmpty
+        ? widget.options
+        : widget.options.where((option) {
+            return option.label.toLowerCase().contains(query) ||
+                option.id.toLowerCase().contains(query);
+          });
+    return source.take(100).toList();
   }
 }
 

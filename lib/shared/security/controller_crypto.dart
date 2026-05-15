@@ -63,6 +63,29 @@ class ControllerCrypto {
     return utf8.decode(cipher.process(encrypted));
   }
 
+  String decryptFrameworkSecret({
+    required String encryptionKeyBase64,
+    required String cipherText,
+  }) {
+    final encryptionKey = utf8.decode(base64Decode(encryptionKeyBase64));
+    final payload = base64Decode(cipherText.replaceAll(' ', '+'));
+    final keyAndIv = _deriveFrameworkKeyAndIv(encryptionKey);
+    final cipher =
+        PaddedBlockCipherImpl(PKCS7Padding(), CBCBlockCipher(AESEngine()))
+          ..init(
+            false,
+            PaddedBlockCipherParameters<ParametersWithIV<KeyParameter>, Null>(
+              ParametersWithIV<KeyParameter>(
+                KeyParameter(keyAndIv.sublist(0, 32)),
+                keyAndIv.sublist(32, 48),
+              ),
+              null,
+            ),
+          );
+
+    return _utf16leToString(cipher.process(Uint8List.fromList(payload)));
+  }
+
   String encryptControllerIdKey({
     required String token,
     required String encryptionKeyBase64,
@@ -103,6 +126,27 @@ class ControllerCrypto {
     return derivator.process(Uint8List.fromList(utf8.encode(password)));
   }
 
+  Uint8List _deriveFrameworkKeyAndIv(String password) {
+    final salt = Uint8List.fromList(const [
+      0x49,
+      0x76,
+      0x61,
+      0x6e,
+      0x20,
+      0x4d,
+      0x65,
+      0x64,
+      0x76,
+      0x65,
+      0x64,
+      0x65,
+      0x76,
+    ]);
+    final derivator = PBKDF2KeyDerivator(HMac(SHA1Digest(), 64))
+      ..init(Pbkdf2Parameters(salt, 1000, 48));
+    return derivator.process(Uint8List.fromList(utf8.encode(password)));
+  }
+
   Uint8List _randomBytes(int length) {
     return Uint8List.fromList(
       List<int>.generate(length, (_) => _random.nextInt(256)),
@@ -126,5 +170,17 @@ class ControllerCrypto {
       bytes.add([codeUnit & 0xff, codeUnit >> 8]);
     }
     return bytes.toBytes();
+  }
+
+  String _utf16leToString(List<int> bytes) {
+    var start = 0;
+    if (bytes.length >= 2 && bytes[0] == 0xff && bytes[1] == 0xfe) {
+      start = 2;
+    }
+    final codeUnits = <int>[];
+    for (var i = start; i + 1 < bytes.length; i += 2) {
+      codeUnits.add(bytes[i] | (bytes[i + 1] << 8));
+    }
+    return String.fromCharCodes(codeUnits);
   }
 }
