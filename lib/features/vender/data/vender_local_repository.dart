@@ -17,12 +17,36 @@ class VenderLocalRepository {
     final db = await _openDatabase();
     await _ensureDraftTable(db);
     await _ensureAdmissionOfflineTables(db);
-
+    final sql = '''
+      SELECT 
+        Localidad_PAR.LOC_IdLocalidad, 
+        Localidad_PAR_2.LOC_Nombre AS LOC_NombreSegundo, 
+        Localidad_PAR_2.LOC_NombreCorto AS LOC_NombreCortoSegundo, 
+        Localidad_PAR.LOC_CodigoPostal, 
+        Localidad_PAR_1.LOC_Nombre AS Departamento,
+        Localidad_PAR.LOC_Nombre || 
+          CASE WHEN Localidad_PAR_1.LOC_NombreCorto IS NULL THEN '' ELSE ' \\ ' || Localidad_PAR_1.LOC_NombreCorto END NombreCompleto, 
+        Localidad_PAR.LOC_Nombre || 
+          CASE WHEN Localidad_PAR_1.LOC_NombreCorto IS NULL THEN '' ELSE ' \\ ' || Localidad_PAR_1.LOC_NombreCorto END || 
+          CASE WHEN Localidad_PAR_2.LOC_NombreCorto IS NULL THEN '' ELSE ' \\ ' || Localidad_PAR_2.LOC_NombreCorto END AS NombreCompletoPais, 
+        Localidad_PAR.LOC_Nombre || 
+          CASE WHEN Localidad_PAR_1.LOC_Nombre IS NULL THEN '' ELSE ' \\ ' || Localidad_PAR_1.LOC_Nombre END AS NombreCompletoDept 
+      FROM Localidad_PAR 
+      LEFT JOIN Localidad_PAR AS Localidad_PAR_1 ON Localidad_PAR_1.LOC_IdLocalidad = Localidad_PAR.LOC_IdAncestroPrimerGrado 
+      LEFT JOIN Localidad_PAR AS Localidad_PAR_2 ON Localidad_PAR_2.LOC_IdLocalidad = Localidad_PAR.LOC_IdAncestroSegundoGrado 
+      LEFT JOIN Localidad_PAR AS Localidad_PAR_3 ON Localidad_PAR_3.LOC_IdLocalidad = Localidad_PAR.LOC_IdAncestroTercerGrado 
+      WHERE Localidad_PAR.LOC_IdTipo <> 1 
+        AND Localidad_PAR.LOC_IdTipo <> 2 
+        AND Localidad_PAR.LOC_IdAncestroSegundoGrado IS NOT NULL 
+        AND (Localidad_PAR.LOC_IdAncestroSegundoGrado LIKE '057' OR Localidad_PAR.LOC_IdAncestroTercerGrado LIKE '057')
+      ORDER BY NombreCompleto;
+    ''';
     final destinationCities = await _loadOptions(
       db,
-      tableCandidates: const ['Localidad_PAR'],
+      customQuery: sql,
       idColumns: const ['LOC_IdLocalidad', 'IdLocalidad'],
       labelColumns: const [
+        'NombreCompleto',
         'LOC_NombreCompleto',
         'LOC_Nombre',
         'NombreCompletoLocalidad',
@@ -1021,11 +1045,28 @@ LIMIT 1
 
   Future<List<CatalogOption>> _loadOptions(
     Database db, {
-    required List<String> tableCandidates,
+    List<String> tableCandidates = const [],
     required List<String> idColumns,
     required List<String> labelColumns,
     required int limit,
+    String? customQuery,
   }) async {
+    if (customQuery != null && customQuery.trim().isNotEmpty) {
+      final queryWithLimit = customQuery.toLowerCase().contains('limit')
+          ? customQuery
+          : '$customQuery LIMIT $limit';
+
+      final rows = await db.rawQuery(queryWithLimit);
+      
+      return rows
+          .map((row) => _optionFromRow(
+                row,
+                idColumns: idColumns,
+                labelColumns: labelColumns,
+              ))
+          .where((item) => item.hasValue)
+          .toList();
+    }
     for (final table in tableCandidates) {
       if (!await _tableExists(db, table)) continue;
       final columns = await _columnsFor(db, table);
