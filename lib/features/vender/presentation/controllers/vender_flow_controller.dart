@@ -112,6 +112,8 @@ class VenderFlowController extends ChangeNotifier {
 
   bool get hasCatalogs => catalogs?.hasAdmissionCatalogs ?? false;
 
+  bool get hasAvailableSupplies => (catalogs?.availableSupplies ?? 0) > 0;
+
   Future<void> initialize() async {
     try {
       await _guard(() async {
@@ -129,6 +131,10 @@ class VenderFlowController extends ChangeNotifier {
         shippingTypes = loadedCatalogs.shippingTypes;
         _applyDefaults(loadedCatalogs);
         statusMessage = 'Catalogos de Vender cargados.';
+        if (loadedCatalogs.availableSupplies <= 0) {
+          statusMessage =
+              'No hay suministros disponibles. Sin suministros no se puede iniciar una venta.';
+        }
       });
     } on Object {
       // The controller keeps errorMessage for the UI.
@@ -152,6 +158,7 @@ class VenderFlowController extends ChangeNotifier {
   Future<void> nextStep() async {
     switch (currentStep) {
       case 0:
+        _requireSuppliesAvailable();
         await prepareSettlement();
         _advanceTo(1);
         return;
@@ -192,6 +199,7 @@ class VenderFlowController extends ChangeNotifier {
 
   Future<void> prepareSettlement() async {
     _validateInitial();
+    _requireSuppliesAvailable();
     await _guard(() async {
       final weight = finalWeight;
       valueRange = await localRepository.declaredValueRange(weight);
@@ -212,6 +220,7 @@ class VenderFlowController extends ChangeNotifier {
 
   Future<void> quoteServices() async {
     _validateInitial(requireShippingType: false);
+    _requireSuppliesAvailable();
     await _guard(() async {
       final quotes = await localRepository.quoteServices(
         appInformation: appInformation,
@@ -601,6 +610,13 @@ class VenderFlowController extends ChangeNotifier {
     if (requireShippingType && shippingTypes.isNotEmpty) {
       _require(shippingType != null, 'Selecciona tipo de envio.');
     }
+  }
+
+  void _requireSuppliesAvailable() {
+    if (hasAvailableSupplies) return;
+    throw const VenderLocalException(
+      'No hay suministros disponibles. Recarga suministros antes de iniciar una venta.',
+    );
   }
 
   void _validatePerson(VenderPersonKind kind) {

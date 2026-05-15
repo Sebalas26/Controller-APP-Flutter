@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
@@ -24,6 +25,7 @@ part 'models/login_models.dart';
 part 'repositories/controller_login_repository.dart';
 part 'services/controller_file_sync_service.dart';
 part 'services/post_login_sync_service.dart';
+part 'services/post_login_supplies_sync_service.dart';
 part 'services/torre_direcciones_sync_service.dart';
 
 typedef LoginProgress = void Function(String message);

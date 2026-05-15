@@ -159,11 +159,7 @@ class VenderRemoteRepository {
       },
       options: Options(
         responseType: ResponseType.bytes,
-        headers: {
-          'UserName': auth.userName,
-          'Token': auth.token,
-          'Content-Type': 'application/json',
-        },
+        headers: _admissionOfflineHeaders(auth, appInformation),
       ),
     );
     final decoded = _decodePossiblyGzip(response.data);
@@ -250,6 +246,35 @@ class VenderRemoteRepository {
       'usuario': encodedUser,
       'IdAplicacion': 9,
     };
+  }
+
+  Map<String, Object> _admissionOfflineHeaders(
+    _IntegrationAuth auth,
+    AppInformation appInformation,
+  ) {
+    return {
+      'UserName': auth.userName,
+      'Token': auth.token,
+      'Usuario': appInformation.idUsuario,
+      'IdUsuario': appInformation.idUsuario,
+      'IdCentroServicio': appInformation.idCentroServicio,
+      'NombreCentroServicio': _sanitizeHeaderValue(
+        appInformation.nombreCentroServicio,
+      ),
+      'IdAplicativoOrigen': '9',
+      'Identificacion': appInformation.identificacionUsuario,
+      'Content-Type': 'application/json',
+      'Accept': 'text/json',
+    };
+  }
+
+  String _sanitizeHeaderValue(String value) {
+    final buffer = StringBuffer();
+    for (final codeUnit in value.codeUnits) {
+      final isControl = codeUnit <= 0x1f && codeUnit != 0x09;
+      if (!isControl && codeUnit < 0x7f) buffer.writeCharCode(codeUnit);
+    }
+    return buffer.toString();
   }
 
   String _encodedUser(AppInformation appInformation) {
