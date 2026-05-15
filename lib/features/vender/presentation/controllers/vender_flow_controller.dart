@@ -217,6 +217,7 @@ class VenderFlowController extends ChangeNotifier {
         appInformation: appInformation,
         destinationCity: destinationCity!,
         deliveryType: deliveryType!,
+        paymentMethod: paymentMethod ?? const CatalogOption(id: '', label: ''),
         shippingType: shippingType ?? const CatalogOption(id: '', label: ''),
         weight: finalWeight,
         declaredValue: commercialValue,
@@ -293,9 +294,10 @@ class VenderFlowController extends ChangeNotifier {
     });
   }
 
-  Future<void> refreshSupplies({int targetAvailable = 20}) async {
+  Future<void> refreshSupplies({int? targetAvailable}) async {
+    final target = targetAvailable ?? _configuredSupplyTarget();
     final current = catalogs?.availableSupplies ?? 0;
-    final amount = math.max(0, targetAvailable - current);
+    final amount = math.max(0, target - current);
     if (amount == 0) {
       statusMessage = 'El mensajero ya tiene suficientes suministros locales.';
       notifyListeners();
@@ -311,6 +313,15 @@ class VenderFlowController extends ChangeNotifier {
       catalogs = await localRepository.loadCatalogs(appInformation);
       statusMessage = 'Suministros recargados: ${supplies.length}.';
     });
+  }
+
+  int _configuredSupplyTarget() {
+    final parameters = catalogs?.parameters ?? const <String, String>{};
+    for (final key in const ['CantidadSuministros', 'MaximoGuiasOffLine']) {
+      final value = int.tryParse((parameters[key] ?? '').trim()) ?? 0;
+      if (value > 0) return value;
+    }
+    return 200;
   }
 
   Future<void> saveDraft({required bool reserveSupply}) async {

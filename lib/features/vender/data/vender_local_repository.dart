@@ -16,6 +16,7 @@ class VenderLocalRepository {
   Future<VenderCatalogs> loadCatalogs(AppInformation appInformation) async {
     final db = await _openDatabase();
     await _ensureDraftTable(db);
+    await _ensureAdmissionOfflineTables(db);
 
     final destinationCities = await _loadOptions(
       db,
@@ -100,16 +101,8 @@ class VenderLocalRepository {
       identificationTypes: identificationTypes,
       packages: packages,
       parameters: await _loadAdmissionParameters(db),
-      availableSupplies: await _countRows(
-        db,
-        'SuministrosMensajeriaOffLine',
-        where: 'Utilizado = 0',
-      ),
-      usedSupplies: await _countRows(
-        db,
-        'SuministrosMensajeriaOffLine',
-        where: 'Utilizado <> 0',
-      ),
+      availableSupplies: await _availableSuppliesCount(db),
+      usedSupplies: await _usedSuppliesCount(db),
       pendingOfflineAdmissions:
           await _countRows(
             db,
@@ -223,6 +216,7 @@ LIMIT 1
     required AppInformation appInformation,
     required CatalogOption destinationCity,
     required CatalogOption deliveryType,
+    required CatalogOption paymentMethod,
     required CatalogOption shippingType,
     required double weight,
     required double declaredValue,
@@ -253,7 +247,9 @@ LIMIT 1
         'SER_NombreServicio',
         'Nombre',
       ]);
-      final price = await _servicePrice(
+      if (_isPaymentCollect(paymentMethod) && serviceId == '15') continue;
+
+      final price = await _serviceQuotePrice(
         db,
         serviceId: serviceId,
         priceListId: priceListId,
@@ -265,7 +261,7 @@ LIMIT 1
       if (price == null) continue;
       final insurance = await _insuranceValue(
         db,
-        serviceId: serviceId,
+        serviceId: price.insuranceServiceId,
         priceListId: priceListId,
         declaredValue: declaredValue,
       );
@@ -273,12 +269,10 @@ LIMIT 1
         VenderServiceQuote(
           id: serviceId,
           name: serviceName.isEmpty ? 'Servicio $serviceId' : serviceName,
-          baseValue: price,
+          baseValue: price.baseValue,
           insuranceValue: insurance,
-          totalValue: price + insurance,
-          deliveryDays: _intValue(
-            _firstExisting(row, const ['SME_DiasEntrega', 'SER_DiasEntrega']),
-          ),
+          totalValue: price.baseValue + insurance,
+          deliveryDays: price.deliveryDays,
           raw: row,
         ),
       );
@@ -291,19 +285,21 @@ LIMIT 1
   Future<void> insertSupplies(List<VenderSupply> supplies) async {
     if (supplies.isEmpty) return;
     final db = await _openDatabase();
-    if (!await _tableExists(db, 'SuministrosMensajeriaOffLine')) {
-      await db.execute(
-        'CREATE TABLE IF NOT EXISTS SuministrosMensajeriaOffLine('
-        'NumeroGuia INTEGER NOT NULL, '
-        'FechaSincronizacion NUMERIC NOT NULL, '
-        'Utilizado NUMERIC NOT NULL)',
-      );
-    }
-    final now = DateTime.now().toIso8601String();
+    await _ensureAdmissionOfflineTables(db);
+    final now = _sqliteDateTime(DateTime.now());
     await db.transaction((txn) async {
       for (final supply in supplies) {
         final guide = supply.guideNumber.trim();
         if (guide.isEmpty) continue;
+        final expiration = _normalizeSupplyExpiration(supply.expirationDate);
+        await txn.insert('SuministrosAdmision', {
+          'numero': int.tryParse(guide) ?? guide,
+          'fechaSincronizacion': now,
+          'fechaVencimiento': expiration,
+          'utilizado': 0,
+          'fechaUtilizado': '',
+          'estado': 'CREADO',
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
         final exists = await txn.rawQuery(
           'SELECT 1 FROM SuministrosMensajeriaOffLine WHERE NumeroGuia = ? LIMIT 1',
           [guide],
@@ -311,9 +307,7 @@ LIMIT 1
         if (exists.isNotEmpty) continue;
         await txn.insert('SuministrosMensajeriaOffLine', {
           'NumeroGuia': guide,
-          'FechaSincronizacion': supply.expirationDate.trim().isNotEmpty
-              ? supply.expirationDate
-              : now,
+          'FechaSincronizacion': now,
           'Utilizado': 0,
         });
       }
@@ -359,6 +353,7 @@ LIMIT 1
   }) async {
     final db = await _openDatabase();
     await _ensureDraftTable(db);
+    await _ensureAdmissionOfflineTables(db);
 
     return db.transaction((txn) async {
       final status = reserveSupply ? 'pending_offline' : 'draft';
@@ -398,6 +393,36 @@ CREATE TABLE IF NOT EXISTS vender_drafts (
 ''');
   }
 
+  Future<void> _ensureAdmissionOfflineTables(DatabaseExecutor db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS SuministrosAdmision (
+  numero INTEGER PRIMARY KEY NOT NULL,
+  fechaSincronizacion TEXT NOT NULL,
+  fechaVencimiento TEXT NOT NULL,
+  utilizado INTEGER NOT NULL,
+  fechaUtilizado TEXT NOT NULL,
+  estado TEXT NOT NULL
+)
+''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS SuministrosMensajeriaOffLine (
+  NumeroGuia INTEGER NOT NULL,
+  FechaSincronizacion NUMERIC NOT NULL,
+  Utilizado NUMERIC NOT NULL
+)
+''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS AdmisionMensajeriaOffLine (
+  IdAdmisionOffline INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  NumeroGuia TEXT NOT NULL,
+  ObjetoMensajeriaRequest TEXT NOT NULL,
+  ObjetoADGuiaImpresion TEXT NOT NULL,
+  EstaSincronizado NUMERIC NOT NULL,
+  FechaSincronizacion NUMERIC NULL
+)
+''');
+  }
+
   Future<int> _currentPriceListId(Database db) async {
     if (!await _tableExists(db, 'ListaPrecios_TAR')) return 0;
     final now = DateTime.now().toIso8601String();
@@ -431,7 +456,7 @@ LIMIT 1
           await _tableExists(db, 'ServicioMensajeria_TAR') &&
           await _tableExists(db, 'ListaPrecioServicio_TAR')) {
         final weekday = _weekdayForLocalDatabase(DateTime.now());
-        return await db.rawQuery(
+        final rows = await db.rawQuery(
           '''
 SELECT DISTINCT Servicio_TAR.*, ServicioMensajeria_TAR.*, ListaPrecioServicio_TAR.*
 FROM CentroServicios_PUA
@@ -464,6 +489,7 @@ WHERE TRIM(CentroServicioServicioDia_PUA.CSD_IdDia) = ?
             weight,
           ],
         );
+        return rows.where(_serviceWindowIsOpen).toList();
       }
     } on Object {
       // The offline schema varies by package; below we keep the same contract
@@ -489,7 +515,7 @@ ORDER BY Servicio_TAR.SER_Nombre COLLATE NOCASE
     );
   }
 
-  Future<double?> _servicePrice(
+  Future<_ServicePriceResult?> _serviceQuotePrice(
     Database db, {
     required String serviceId,
     required int priceListId,
@@ -498,15 +524,141 @@ ORDER BY Servicio_TAR.SER_Nombre COLLATE NOCASE
     required String deliveryTypeId,
     required double weight,
   }) async {
-    final exception = await _exceptionServicePrice(
+    final deliveryDays = await _deliveryDaysForService(
+      db,
+      serviceId: serviceId,
+      originCityId: originCityId,
+      destinationCityId: destinationCityId,
+    );
+    if (deliveryDays == null) {
+      return null;
+    }
+
+    final serviceNumber = int.tryParse(serviceId.trim()) ?? 0;
+    final delivery = deliveryTypeId.trim();
+    final isKmOrRural = delivery == '3' || delivery == '4';
+
+    if (isKmOrRural) {
+      return _messagingPrice(
+        db,
+        serviceId: serviceId,
+        priceListId: priceListId,
+        originCityId: originCityId,
+        destinationCityId: destinationCityId,
+        deliveryTypeId: deliveryTypeId,
+        weight: weight,
+        deliveryDays: deliveryDays,
+      );
+    }
+
+    if (serviceNumber == 5) {
+      final promotional = await _promotionalRangePrice(
+        db,
+        serviceId: serviceId,
+        priceListId: priceListId,
+        weight: weight,
+      );
+      if (promotional == null) return null;
+      return _ServicePriceResult(
+        baseValue: promotional,
+        insuranceServiceId: serviceId,
+        deliveryDays: deliveryDays,
+      );
+    }
+
+    if (serviceNumber == 6) {
+      final cargo = await _cargoRouteRangePrice(
+        db,
+        serviceId: serviceId,
+        priceListId: priceListId,
+        originCityId: originCityId,
+        destinationCityId: destinationCityId,
+        deliveryTypeId: deliveryTypeId,
+        weight: weight,
+        deliveryDays: deliveryDays,
+      );
+      return cargo;
+    }
+
+    return _messagingPrice(
       db,
       serviceId: serviceId,
       priceListId: priceListId,
       originCityId: originCityId,
       destinationCityId: destinationCityId,
+      deliveryTypeId: deliveryTypeId,
+      weight: weight,
+      deliveryDays: deliveryDays,
     );
-    if (exception != null) return _priceByWeight(exception, weight);
+  }
 
+  Future<_ServicePriceResult?> _messagingPrice(
+    Database db, {
+    required String serviceId,
+    required int priceListId,
+    required String originCityId,
+    required String destinationCityId,
+    required String deliveryTypeId,
+    required double weight,
+    required int deliveryDays,
+  }) async {
+    final effectiveServiceId =
+        deliveryTypeId.trim() == '3' || deliveryTypeId.trim() == '4'
+        ? '17'
+        : serviceId;
+    final byDeliveryType = await _deliveryTypeWeightPrice(
+      db,
+      serviceId: effectiveServiceId,
+      priceListId: priceListId,
+      deliveryTypeId: deliveryTypeId,
+    );
+    if (_hasInitialAndAdditionalPrice(byDeliveryType)) {
+      return _ServicePriceResult(
+        baseValue: _priceByWeight(byDeliveryType!, weight),
+        insuranceServiceId: effectiveServiceId,
+        deliveryDays: deliveryDays,
+      );
+    }
+
+    final exception = await _exceptionServicePrice(
+      db,
+      serviceId: effectiveServiceId,
+      priceListId: priceListId,
+      originCityId: originCityId,
+      destinationCityId: destinationCityId,
+    );
+    if (_hasInitialAndAdditionalPrice(exception)) {
+      return _ServicePriceResult(
+        baseValue: _priceByWeight(exception!, weight),
+        insuranceServiceId: effectiveServiceId,
+        deliveryDays: deliveryDays,
+      );
+    }
+
+    final route = await _additionalRoutePrice(
+      db,
+      serviceId: effectiveServiceId,
+      priceListId: priceListId,
+      originCityId: originCityId,
+      destinationCityId: destinationCityId,
+    );
+    if (_hasAnyWeightPrice(route)) {
+      return _ServicePriceResult(
+        baseValue: _priceByWeight(route!, weight),
+        insuranceServiceId: effectiveServiceId,
+        deliveryDays: deliveryDays,
+      );
+    }
+
+    return null;
+  }
+
+  Future<Map<String, Object?>?> _deliveryTypeWeightPrice(
+    Database db, {
+    required String serviceId,
+    required int priceListId,
+    required String deliveryTypeId,
+  }) async {
     if (!await _tableExists(db, 'PrecioTipoEntrega_TAR') ||
         !await _tableExists(db, 'ListaPrecioServicio_TAR')) {
       return null;
@@ -530,7 +682,7 @@ LIMIT 1
       ],
     );
     if (rows.isEmpty) return null;
-    return _priceByWeight(rows.first, weight);
+    return rows.first;
   }
 
   Future<Map<String, Object?>?> _exceptionServicePrice(
@@ -555,19 +707,265 @@ WHERE ListaPrecioServicio_TAR.LPS_IdServicio = ?
   AND ListaPrecioServicio_TAR.LPS_IdListaPrecios = ?
   AND PrecioServicioExcepcionTrayecto_TAR.SET_IdLocalidadOrigen = ?
   AND PrecioServicioExcepcionTrayecto_TAR.SET_IdLocalidadDestino = ?
-LIMIT 1
+UNION ALL
+SELECT PrecioServicioExcepcionTrayecto_TAR.SET_ValorKiloInicial AS PTE_ValorKiloInicial,
+       PrecioServicioExcepcionTrayecto_TAR.SET_ValorKiloAdicional AS PTE_ValorKiloAdicional
+FROM ListaPrecioServicio_TAR
+INNER JOIN PrecioServicioExcepcionTrayecto_TAR
+  ON ListaPrecioServicio_TAR.LPS_IdListaPrecioServicio = PrecioServicioExcepcionTrayecto_TAR.SET_IdListaPrecioServicio
+WHERE ListaPrecioServicio_TAR.LPS_IdServicio = ?
+  AND ListaPrecioServicio_TAR.LPS_IdListaPrecios = ?
+  AND PrecioServicioExcepcionTrayecto_TAR.SET_IdLocalidadOrigen = ?
+  AND PrecioServicioExcepcionTrayecto_TAR.SET_IdLocalidadDestino = ?
+  AND SET_EsDestinoTodoElPais = 1
+UNION ALL
+SELECT PrecioServicioExcepcionTrayecto_TAR.SET_ValorKiloInicial AS PTE_ValorKiloInicial,
+       PrecioServicioExcepcionTrayecto_TAR.SET_ValorKiloAdicional AS PTE_ValorKiloAdicional
+FROM ListaPrecioServicio_TAR
+INNER JOIN PrecioServicioExcepcionTrayecto_TAR
+  ON ListaPrecioServicio_TAR.LPS_IdListaPrecioServicio = PrecioServicioExcepcionTrayecto_TAR.SET_IdListaPrecioServicio
+WHERE ListaPrecioServicio_TAR.LPS_IdServicio = ?
+  AND ListaPrecioServicio_TAR.LPS_IdListaPrecios = ?
+  AND PrecioServicioExcepcionTrayecto_TAR.SET_IdLocalidadOrigen = ?
+  AND PrecioServicioExcepcionTrayecto_TAR.SET_IdLocalidadDestino = ?
+  AND SET_EsOrigenTodoElPais = 1
 ''',
-      [serviceId, priceListId, originCityId, destinationCityId],
+      [
+        serviceId,
+        priceListId,
+        originCityId,
+        destinationCityId,
+        serviceId,
+        priceListId,
+        originCityId,
+        destinationCityId,
+        serviceId,
+        priceListId,
+        originCityId,
+        destinationCityId,
+      ],
     );
     if (rows.isEmpty) return null;
-    return rows.first;
+    return rows.last;
+  }
+
+  Future<Map<String, Object?>?> _additionalRoutePrice(
+    Database db, {
+    required String serviceId,
+    required int priceListId,
+    required String originCityId,
+    required String destinationCityId,
+  }) async {
+    if (!await _tableExists(db, 'Trayecto_TAR') ||
+        !await _tableExists(db, 'TrayectoSubTrayecto_TAR') ||
+        !await _tableExists(db, 'ServicioTrayecto_TAR') ||
+        !await _tableExists(db, 'PrecioTrayecto_TAR') ||
+        !await _tableExists(db, 'ListaPrecioServicio_TAR')) {
+      return null;
+    }
+    final rows = await db.rawQuery(
+      '''
+SELECT TrayectoSubTrayecto_TAR.TRS_IdTipoSubTrayecto,
+       PrecioTrayecto_TAR.PTR_ValorFijo
+FROM Trayecto_TAR
+JOIN TrayectoSubTrayecto_TAR
+  ON Trayecto_TAR.TRA_IdTrayectoSubTrayecto = TrayectoSubTrayecto_TAR.TRS_IdTrayectoSubTrayecto
+JOIN ServicioTrayecto_TAR
+  ON Trayecto_TAR.TRA_IdTrayecto = ServicioTrayecto_TAR.STR_IdTrayecto
+JOIN PrecioTrayecto_TAR
+  ON TrayectoSubTrayecto_TAR.TRS_IdTrayectoSubTrayecto = PrecioTrayecto_TAR.PTR_IdTrayectoSubTrayecto
+JOIN ListaPrecioServicio_TAR
+  ON PrecioTrayecto_TAR.PTR_IdListaPrecioServicio = ListaPrecioServicio_TAR.LPS_IdListaPrecioServicio
+WHERE ServicioTrayecto_TAR.STR_IdServicio = ?
+  AND Trayecto_TAR.TRA_IdLocalidadOrigen = ?
+  AND Trayecto_TAR.TRA_IdLocalidadDestino = ?
+  AND ListaPrecioServicio_TAR.LPS_IdListaPrecios = ?
+  AND ListaPrecioServicio_TAR.LPS_IdServicio = ?
+''',
+      [serviceId, originCityId, destinationCityId, priceListId, serviceId],
+    );
+    if (rows.isEmpty) return null;
+    var initial = 0.0;
+    var additional = 0.0;
+    for (final row in rows) {
+      final type = _stringValue(row['TRS_IdTipoSubTrayecto']).trim();
+      final value = _doubleValue(row['PTR_ValorFijo']);
+      if (type == 'SKI') {
+        initial = value;
+      } else {
+        additional = value;
+      }
+    }
+    return {
+      'PTE_ValorKiloInicial': initial,
+      'PTE_ValorKiloAdicional': additional,
+    };
+  }
+
+  Future<double?> _promotionalRangePrice(
+    Database db, {
+    required String serviceId,
+    required int priceListId,
+    required double weight,
+  }) async {
+    if (!await _tableExists(db, 'PrecioRango_TAR')) return null;
+    final priceListServiceId = await _priceListServiceId(
+      db,
+      serviceId: serviceId,
+      priceListId: priceListId,
+    );
+    if (priceListServiceId <= 0) return null;
+    final rows = await db.rawQuery(
+      '''
+SELECT PRA_Valor
+FROM PrecioRango_TAR
+WHERE PRA_IdListaPrecioServicio = ?
+  AND PRA_Inicial <= ?
+  AND PRA_Final >= ?
+LIMIT 1
+''',
+      [priceListServiceId, weight, weight],
+    );
+    if (rows.isEmpty) return null;
+    return _doubleValue(rows.first['PRA_Valor']);
+  }
+
+  Future<_ServicePriceResult?> _cargoRouteRangePrice(
+    Database db, {
+    required String serviceId,
+    required int priceListId,
+    required String originCityId,
+    required String destinationCityId,
+    required String deliveryTypeId,
+    required double weight,
+    required int deliveryDays,
+  }) async {
+    if (!await _tableExists(db, 'Trayecto_TAR') ||
+        !await _tableExists(db, 'TrayectoSubTrayecto_TAR') ||
+        !await _tableExists(db, 'ServicioTrayecto_TAR') ||
+        !await _tableExists(db, 'PrecioTrayecto_TAR') ||
+        !await _tableExists(db, 'PrecioTrayectoRango_TAR')) {
+      return null;
+    }
+    final priceListServiceId = await _priceListServiceId(
+      db,
+      serviceId: serviceId,
+      priceListId: priceListId,
+    );
+    if (priceListServiceId <= 0) return null;
+    final rows = await db.rawQuery(
+      '''
+SELECT TrayectoSubTrayecto_TAR.TRS_IdTipoSubTrayecto,
+       PrecioTrayecto_TAR.PTR_ValorFijo,
+       PrecioTrayectoRango_TAR.PPR_Inicial,
+       PrecioTrayectoRango_TAR.PPR_Final,
+       PrecioTrayectoRango_TAR.PPR_Valor
+FROM Trayecto_TAR
+JOIN TrayectoSubTrayecto_TAR
+  ON Trayecto_TAR.TRA_IdTrayectoSubTrayecto = TrayectoSubTrayecto_TAR.TRS_IdTrayectoSubTrayecto
+JOIN ServicioTrayecto_TAR
+  ON Trayecto_TAR.TRA_IdTrayecto = ServicioTrayecto_TAR.STR_IdTrayecto
+JOIN PrecioTrayecto_TAR
+  ON TrayectoSubTrayecto_TAR.TRS_IdTrayectoSubTrayecto = PrecioTrayecto_TAR.PTR_IdTrayectoSubTrayecto
+JOIN PrecioTrayectoRango_TAR
+  ON PrecioTrayecto_TAR.PTR_IdPrecioTrayectoSubTrayect = PrecioTrayectoRango_TAR.PPR_IdPrecioTrayecto
+WHERE ServicioTrayecto_TAR.STR_IdServicio = ?
+  AND Trayecto_TAR.TRA_IdLocalidadOrigen = ?
+  AND Trayecto_TAR.TRA_IdLocalidadDestino = ?
+  AND PrecioTrayecto_TAR.PTR_IdListaPrecioServicio = ?
+''',
+      [serviceId, originCityId, destinationCityId, priceListServiceId],
+    );
+    for (final row in rows) {
+      final initialRange = _doubleValue(row['PPR_Inicial']);
+      final finalRange = _doubleValue(row['PPR_Final']);
+      if (weight < initialRange || weight > finalRange) continue;
+      final routeType = _stringValue(row['TRS_IdTipoSubTrayecto']).trim();
+      if (routeType == 'ESPECIAL') {
+        return _messagingPrice(
+          db,
+          serviceId: serviceId,
+          priceListId: priceListId,
+          originCityId: originCityId,
+          destinationCityId: destinationCityId,
+          deliveryTypeId: deliveryTypeId,
+          weight: weight,
+          deliveryDays: deliveryDays,
+        );
+      }
+      final value = _doubleValue(row['PPR_Valor']) * finalRange;
+      return _ServicePriceResult(
+        baseValue: value,
+        insuranceServiceId: serviceId,
+        deliveryDays: deliveryDays,
+      );
+    }
+    return null;
+  }
+
+  Future<int?> _deliveryDaysForService(
+    Database db, {
+    required String serviceId,
+    required String originCityId,
+    required String destinationCityId,
+  }) async {
+    if (!await _tableExists(db, 'Trayecto_TAR') ||
+        !await _tableExists(db, 'ServicioTrayecto_TAR')) {
+      return null;
+    }
+    final rows = await db.rawQuery(
+      '''
+SELECT ServicioTrayecto_TAR.STR_TiempoEntrega
+FROM Trayecto_TAR
+INNER JOIN ServicioTrayecto_TAR
+  ON Trayecto_TAR.TRA_IdTrayecto = ServicioTrayecto_TAR.STR_IdTrayecto
+WHERE Trayecto_TAR.TRA_IdLocalidadOrigen = ?
+  AND Trayecto_TAR.TRA_IdLocalidadDestino = ?
+  AND ServicioTrayecto_TAR.STR_IdServicio = ?
+LIMIT 1
+''',
+      [originCityId, destinationCityId, serviceId],
+    );
+    if (rows.isEmpty) return null;
+    return _intValue(rows.first['STR_TiempoEntrega']);
+  }
+
+  Future<int> _priceListServiceId(
+    Database db, {
+    required String serviceId,
+    required int priceListId,
+  }) async {
+    if (!await _tableExists(db, 'ListaPrecioServicio_TAR')) return 0;
+    final rows = await db.rawQuery(
+      '''
+SELECT LPS_IdListaPrecioServicio
+FROM ListaPrecioServicio_TAR
+WHERE LPS_IdServicio = ?
+  AND LPS_IdListaPrecios = ?
+LIMIT 1
+''',
+      [serviceId, priceListId],
+    );
+    if (rows.isEmpty) return 0;
+    return _intValue(rows.first['LPS_IdListaPrecioServicio']);
+  }
+
+  bool _hasInitialAndAdditionalPrice(Map<String, Object?>? row) {
+    if (row == null) return false;
+    return _doubleValue(row['PTE_ValorKiloInicial']) != 0 &&
+        _doubleValue(row['PTE_ValorKiloAdicional']) != 0;
+  }
+
+  bool _hasAnyWeightPrice(Map<String, Object?>? row) {
+    if (row == null) return false;
+    return _doubleValue(row['PTE_ValorKiloInicial']) != 0 ||
+        _doubleValue(row['PTE_ValorKiloAdicional']) != 0;
   }
 
   double _priceByWeight(Map<String, Object?> row, double weight) {
     final initial = _doubleValue(row['PTE_ValorKiloInicial']);
     final additional = _doubleValue(row['PTE_ValorKiloAdicional']);
-    final billableWeight = math.max(1, weight.ceil());
-    return initial + (math.max(0, billableWeight - 1) * additional);
+    return initial + (math.max(0, weight - 1) * additional);
   }
 
   Future<double> _insuranceValue(
@@ -579,7 +977,7 @@ LIMIT 1
     if (!await _tableExists(db, 'ListaPrecioServicio_TAR')) return 0;
     final rows = await db.rawQuery(
       '''
-SELECT LPS_PrimaSeguros, LPS_IgnorarPrima
+SELECT LPS_PrimaSeguros
 FROM ListaPrecioServicio_TAR
 WHERE LPS_IdServicio = ?
   AND LPS_IdListaPrecios = ?
@@ -589,8 +987,6 @@ LIMIT 1
       [serviceId, priceListId],
     );
     if (rows.isEmpty) return 0;
-    final ignore = _boolish(rows.first['LPS_IgnorarPrima']);
-    if (ignore) return 0;
     final percentage = _doubleValue(rows.first['LPS_PrimaSeguros']);
     return (declaredValue * percentage) / 100;
   }
@@ -659,16 +1055,26 @@ LIMIT 1
   }
 
   Future<Map<String, String>> _loadAdmissionParameters(Database db) async {
-    if (!await _tableExists(db, 'ParametrosAdmisiones_MEN')) return const {};
-    final rows = await db.rawQuery(
-      'SELECT PAM_IdParametro, PAM_ValorParametro FROM ParametrosAdmisiones_MEN',
-    );
-    return {
-      for (final row in rows)
-        _stringValue(row['PAM_IdParametro']): _stringValue(
+    final parameters = <String, String>{};
+    if (await _tableExists(db, 'ParametrosAdmisiones_MEN')) {
+      final rows = await db.rawQuery(
+        'SELECT PAM_IdParametro, PAM_ValorParametro FROM ParametrosAdmisiones_MEN',
+      );
+      for (final row in rows) {
+        parameters[_stringValue(row['PAM_IdParametro'])] = _stringValue(
           row['PAM_ValorParametro'],
-        ),
-    }..removeWhere((key, value) => key.isEmpty);
+        );
+      }
+    }
+    if (await _tableExists(db, 'ParametrosFramework')) {
+      final rows = await db.rawQuery(
+        'SELECT Codigo, Valor FROM ParametrosFramework',
+      );
+      for (final row in rows) {
+        parameters[_stringValue(row['Codigo'])] = _stringValue(row['Valor']);
+      }
+    }
+    return parameters..removeWhere((key, value) => key.isEmpty);
   }
 
   Future<int> _countRows(
@@ -686,16 +1092,39 @@ LIMIT 1
     return int.tryParse(_stringValue(value)) ?? 0;
   }
 
+  Future<int> _availableSuppliesCount(DatabaseExecutor db) async {
+    final admision = await _countRows(
+      db,
+      'SuministrosAdmision',
+      where: "utilizado = 0 AND datetime('now','localtime') < fechaVencimiento",
+    );
+    final legacy = await _countRows(
+      db,
+      'SuministrosMensajeriaOffLine',
+      where: 'Utilizado = 0',
+    );
+    return math.max(admision, legacy);
+  }
+
+  Future<int> _usedSuppliesCount(DatabaseExecutor db) async {
+    final admision = await _countRows(
+      db,
+      'SuministrosAdmision',
+      where: 'utilizado <> 0',
+    );
+    final legacy = await _countRows(
+      db,
+      'SuministrosMensajeriaOffLine',
+      where: 'Utilizado <> 0',
+    );
+    return math.max(admision, legacy);
+  }
+
   Future<String> _reserveSupply(
     Transaction txn, {
     required String preferredGuide,
   }) async {
-    if (!await _tableExists(txn, 'SuministrosMensajeriaOffLine')) {
-      if (preferredGuide.trim().isNotEmpty) return preferredGuide.trim();
-      throw const VenderLocalException(
-        'No hay tabla local de suministros para registrar la admision offline.',
-      );
-    }
+    await _ensureAdmissionOfflineTables(txn);
 
     final guide = preferredGuide.trim().isNotEmpty
         ? preferredGuide.trim()
@@ -706,6 +1135,18 @@ LIMIT 1
       );
     }
 
+    final now = _sqliteDateTime(DateTime.now());
+    await txn.rawUpdate(
+      '''
+UPDATE SuministrosAdmision
+SET utilizado = 1,
+    fechaUtilizado = ?,
+    estado = 'UTILIZADO'
+WHERE numero = ?
+  AND utilizado = 0
+''',
+      [now, int.tryParse(guide) ?? guide],
+    );
     await txn.rawUpdate(
       'UPDATE SuministrosMensajeriaOffLine SET Utilizado = 1 '
       'WHERE NumeroGuia = ? AND Utilizado = 0',
@@ -715,12 +1156,23 @@ LIMIT 1
   }
 
   Future<String> _nextAvailableSupply(Transaction txn) async {
-    final rows = await txn.rawQuery(
+    final admisionRows = await txn.rawQuery('''
+SELECT numero
+FROM SuministrosAdmision
+WHERE utilizado = 0
+  AND datetime('now','localtime') < fechaVencimiento
+ORDER BY numero ASC
+LIMIT 1
+''');
+    if (admisionRows.isNotEmpty) {
+      return _stringValue(admisionRows.first['numero']);
+    }
+    final legacyRows = await txn.rawQuery(
       'SELECT NumeroGuia FROM SuministrosMensajeriaOffLine '
       'WHERE Utilizado = 0 ORDER BY NumeroGuia ASC LIMIT 1',
     );
-    if (rows.isEmpty) return '';
-    return _stringValue(rows.first['NumeroGuia']);
+    if (legacyRows.isEmpty) return '';
+    return _stringValue(legacyRows.first['NumeroGuia']);
   }
 
   Future<bool> _tableExists(DatabaseExecutor db, String table) async {
@@ -781,18 +1233,6 @@ LIMIT 1
     return '';
   }
 
-  Object? _firstExisting(Map<String, Object?> row, List<String> columns) {
-    final lowerIndex = {
-      for (final entry in row.entries) entry.key.toLowerCase(): entry.value,
-    };
-    for (final column in columns) {
-      if (row.containsKey(column)) return row[column];
-      final value = lowerIndex[column.toLowerCase()];
-      if (value != null) return value;
-    }
-    return null;
-  }
-
   double _doubleValue(Object? value) {
     if (value is num) return value.toDouble();
     final raw = _stringValue(value).replaceAll(r'$', '').trim();
@@ -818,6 +1258,67 @@ LIMIT 1
     return text == 'true' || text == '1' || text == 'si' || text == 'sí';
   }
 
+  bool _isPaymentCollect(CatalogOption paymentMethod) {
+    return paymentMethod.id.trim() == '3' ||
+        paymentMethod.label.trim().toUpperCase().contains('AL COBRO');
+  }
+
+  bool _serviceWindowIsOpen(Map<String, Object?> row) {
+    final start = _minutesFromTime(
+      _firstColumnValue(row, const ['CSD_HoraInicial']),
+    );
+    final end = _minutesFromTime(
+      _firstColumnValue(row, const ['CSD_HoraFinal']),
+    );
+    if (start == null || end == null) return true;
+    final now = DateTime.now();
+    final current = (now.hour * 60) + now.minute;
+    if (start <= end) return current >= start && current <= end;
+    return current >= start || current <= end;
+  }
+
+  int? _minutesFromTime(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return null;
+    final match = RegExp(r'(\d{1,2}):(\d{2})').firstMatch(text);
+    if (match == null) return null;
+    final hour = int.tryParse(match.group(1) ?? '');
+    final minute = int.tryParse(match.group(2) ?? '');
+    if (hour == null || minute == null || hour > 23 || minute > 59) {
+      return null;
+    }
+    return (hour * 60) + minute;
+  }
+
+  String _normalizeSupplyExpiration(String value) {
+    final text = value.trim();
+    if (text.isEmpty) {
+      return _sqliteDateTime(DateTime.now().add(const Duration(days: 30)));
+    }
+    final parsed = DateTime.tryParse(text);
+    if (parsed != null) return _sqliteDateTime(parsed);
+    final match = RegExp(
+      r'^(\d{2})/(\d{2})/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$',
+    ).firstMatch(text);
+    if (match != null) {
+      final day = int.parse(match.group(1)!);
+      final month = int.parse(match.group(2)!);
+      final year = int.parse(match.group(3)!);
+      final hour = int.tryParse(match.group(4) ?? '') ?? 0;
+      final minute = int.tryParse(match.group(5) ?? '') ?? 0;
+      final second = int.tryParse(match.group(6) ?? '') ?? 0;
+      return _sqliteDateTime(DateTime(year, month, day, hour, minute, second));
+    }
+    return text;
+  }
+
+  String _sqliteDateTime(DateTime value) {
+    String two(int input) => input.toString().padLeft(2, '0');
+    return '${value.year.toString().padLeft(4, '0')}-'
+        '${two(value.month)}-${two(value.day)} '
+        '${two(value.hour)}:${two(value.minute)}:${two(value.second)}';
+  }
+
   String _weekdayForLocalDatabase(DateTime date) {
     if (date.weekday == DateTime.sunday) return '7';
     return date.weekday.toString();
@@ -828,4 +1329,16 @@ LIMIT 1
   }
 
   String _stringValue(Object? value) => value == null ? '' : value.toString();
+}
+
+class _ServicePriceResult {
+  const _ServicePriceResult({
+    required this.baseValue,
+    required this.insuranceServiceId,
+    required this.deliveryDays,
+  });
+
+  final double baseValue;
+  final String insuranceServiceId;
+  final int deliveryDays;
 }

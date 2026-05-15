@@ -20,7 +20,6 @@ class TorreDireccionesSyncService {
     required AppInformation appInformation,
     LoginProgress? onProgress,
   }) async {
-
     onProgress?.call('Consultando esquemas de Torre Direcciones...');
     final token = await apiClient.fetchTorreDireccionesToken(config);
     final schemas = await apiClient.fetchTorreDirectionSchemas(
@@ -34,30 +33,44 @@ class TorreDireccionesSyncService {
         .where((schema) => schema.hasServiceCenterFilter)
         .toList();
 
-      final credentials = await _readS3Credentials(localDatabase);
-      if (!credentials.isComplete) {
-        throw const LoginException(
-          'No se encontraron credenciales AWS de Torre Direcciones.',
-        );
-      }
+    final credentials = await _readS3Credentials(localDatabase);
+    if (!credentials.isComplete) {
+      throw const LoginException(
+        'No se encontraron credenciales AWS de Torre Direcciones.',
+      );
+    }
 
-      final workspace = await _syncDirectory();
-      final downloads = Directory(path.join(workspace.path, 'torre_downloads'));
-      await _resetDirectory(downloads);
+    final workspace = await _syncDirectory();
+    final downloads = Directory(path.join(workspace.path, 'torre_downloads'));
+    await _resetDirectory(downloads);
 
-      final tableNames = schemas.map((schema) => schema.tableName).toSet();
-      final idCentroServicio = '_${appInformation.idCentroServicio}';
-      var loadedTables = 0;
-      for (final schema in filteredSchemas) {
-        final zipName = '${schema.tableName}$idCentroServicio$_zipExtension';
-        onProgress?.call('Sincronizando Torre ${schema.tableName}...');
-        if(await _syncS3Schema(downloads, zipName, idCentroServicio, tableNames, credentials, localDatabase)) {
-          loadedTables++;
-        }
+    final tableNames = schemas.map((schema) => schema.tableName).toSet();
+    final idCentroServicio = '_${appInformation.idCentroServicio}';
+    var loadedTables = 0;
+    for (final schema in filteredSchemas) {
+      final zipName = '${schema.tableName}$idCentroServicio$_zipExtension';
+      onProgress?.call('Sincronizando Torre ${schema.tableName}...');
+      if (await _syncS3Schema(
+        downloads,
+        zipName,
+        idCentroServicio,
+        tableNames,
+        credentials,
+        localDatabase,
+      )) {
+        loadedTables++;
       }
-      if(await _syncS3Schema(downloads, "Sincronizacion.zip", idCentroServicio, tableNames, credentials, localDatabase)) {
-          loadedTables++;
-        }
+    }
+    if (await _syncS3Schema(
+      downloads,
+      "Sincronizacion.zip",
+      idCentroServicio,
+      tableNames,
+      credentials,
+      localDatabase,
+    )) {
+      loadedTables++;
+    }
     onProgress?.call('Torre Direcciones sincronizada ($loadedTables tablas).');
     return schemas.length;
   }
@@ -135,15 +148,16 @@ class TorreDireccionesSyncService {
       canonicalUri: uri.path,
     );
     try {
-      if (await destination.exists()) 
+      if (await destination.exists()) {
         await destination.delete();
+      }
       await _dio.downloadUri(
         uri,
         destination.path,
         options: Options(headers: headers),
       );
       return true;
-    } on DioException catch (error) {
+    } on DioException {
       return false;
     }
   }

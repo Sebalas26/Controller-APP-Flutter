@@ -168,14 +168,21 @@ class VenderRemoteRepository {
     );
     final decoded = _decodePossiblyGzip(response.data);
     final json = jsonDecode(decoded);
-    if (json is! List) return const [];
-    return json
+    final list = _findList(json);
+    if (list == null) return const [];
+    final supplies = list
         .whereType<Object?>()
         .map(_asMapOrNull)
         .whereType<Map<String, dynamic>>()
         .map(VenderSupply.fromJson)
         .where((supply) => supply.guideNumber.trim().isNotEmpty)
         .toList();
+    if (supplies.length != amount) {
+      throw const VenderRemoteException(
+        'La cantidad de suministros recibida no coincide con la solicitada.',
+      );
+    }
+    return supplies;
   }
 
   Future<String> fetchGeoToken(ControllerApiConfig config) async {
@@ -305,6 +312,33 @@ class VenderRemoteRepository {
       }
     }
     return '';
+  }
+
+  List<dynamic>? _findList(dynamic json) {
+    if (json is List) return json;
+    if (json is Map<String, dynamic>) {
+      for (final key in const [
+        'data',
+        'Data',
+        'suministros',
+        'Suministros',
+        'result',
+        'Result',
+        'response',
+        'Response',
+      ]) {
+        final value = json[key];
+        final list = _findList(value);
+        if (list != null) return list;
+      }
+      for (final value in json.values) {
+        final list = _findList(value);
+        if (list != null) return list;
+      }
+    } else if (json is Map) {
+      return _findList(Map<String, dynamic>.from(json));
+    }
+    return null;
   }
 }
 
