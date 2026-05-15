@@ -20,10 +20,6 @@ class TorreDireccionesSyncService {
     required AppInformation appInformation,
     LoginProgress? onProgress,
   }) async {
-    if (await localDatabase.hasTorreDirectionRegistry()) {
-      onProgress?.call('Torre Direcciones ya tiene tablas locales.');
-      return 0;
-    }
 
     onProgress?.call('Consultando esquemas de Torre Direcciones...');
     final token = await apiClient.fetchTorreDireccionesToken(config);
@@ -37,43 +33,57 @@ class TorreDireccionesSyncService {
     final filteredSchemas = schemas
         .where((schema) => schema.hasServiceCenterFilter)
         .toList();
-    if (filteredSchemas.isEmpty) return schemas.length;
 
-    final credentials = await _readS3Credentials(localDatabase);
-    if (!credentials.isComplete) {
-      throw const LoginException(
-        'No se encontraron credenciales AWS de Torre Direcciones.',
-      );
-    }
+      final credentials = await _readS3Credentials(localDatabase);
+      if (!credentials.isComplete) {
+        throw const LoginException(
+          'No se encontraron credenciales AWS de Torre Direcciones.',
+        );
+      }
 
-    final workspace = await _syncDirectory();
-    final downloads = Directory(path.join(workspace.path, 'torre_downloads'));
-    await _resetDirectory(downloads);
+      final workspace = await _syncDirectory();
+      final downloads = Directory(path.join(workspace.path, 'torre_downloads'));
+      await _resetDirectory(downloads);
 
-    final tableNames = schemas.map((schema) => schema.tableName).toSet();
-    final idCentroServicio = '_${appInformation.idCentroServicio}';
-    var loadedTables = 0;
-    for (final schema in filteredSchemas) {
-      final zipName = '${schema.tableName}$idCentroServicio$_zipExtension';
-      onProgress?.call('Sincronizando Torre ${schema.tableName}...');
-      final destination = File(path.join(downloads.path, zipName));
-      final downloaded = await _downloadS3Object(
-        credentials: credentials,
-        objectKey: zipName,
-        destination: destination,
-      );
-      if (!downloaded) continue;
-      final statements = await _insertStatementsFromZip(
-        zipFile: destination,
-        idCentroServicio: idCentroServicio,
-        validTableNames: tableNames,
-      );
-      await localDatabase.executeSyncStatements(statements);
-      loadedTables++;
-    }
-
+      final tableNames = schemas.map((schema) => schema.tableName).toSet();
+      final idCentroServicio = '_${appInformation.idCentroServicio}';
+      var loadedTables = 0;
+      for (final schema in filteredSchemas) {
+        final zipName = '${schema.tableName}$idCentroServicio$_zipExtension';
+        onProgress?.call('Sincronizando Torre ${schema.tableName}...');
+        if(await _syncS3Schema(downloads, zipName, idCentroServicio, tableNames, credentials, localDatabase)) {
+          loadedTables++;
+        }
+      }
+      if(await _syncS3Schema(downloads, "Sincronizacion.zip", idCentroServicio, tableNames, credentials, localDatabase)) {
+          loadedTables++;
+        }
     onProgress?.call('Torre Direcciones sincronizada ($loadedTables tablas).');
     return schemas.length;
+  }
+
+  Future<bool> _syncS3Schema(
+    Directory downloads,
+    String zipName,
+    String idCentroServicio,
+    Set<String> tableNames,
+    _TorreS3Credentials credentials,
+    ControllerLocalDatabase localDatabase,
+  ) async {
+    final destination = File(path.join(downloads.path, zipName));
+    final downloaded = await _downloadS3Object(
+      credentials: credentials,
+      objectKey: zipName,
+      destination: destination,
+    );
+    if (!downloaded) false;
+    final statements = await _insertStatementsFromZip(
+      zipFile: destination,
+      idCentroServicio: idCentroServicio,
+      validTableNames: tableNames,
+    );
+    await localDatabase.executeSyncStatements(statements);
+    return true;
   }
 
   Future<_TorreS3Credentials> _readS3Credentials(
@@ -125,14 +135,15 @@ class TorreDireccionesSyncService {
       canonicalUri: uri.path,
     );
     try {
-      if (await destination.exists()) await destination.delete();
+      if (await destination.exists()) 
+        await destination.delete();
       await _dio.downloadUri(
         uri,
         destination.path,
         options: Options(headers: headers),
       );
       return true;
-    } on DioException {
+    } on DioException catch (error) {
       return false;
     }
   }

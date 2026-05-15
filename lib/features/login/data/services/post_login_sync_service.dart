@@ -35,11 +35,11 @@ class PostLoginSyncService {
         config: config,
         appInformation: appInformation,
       );
-      final productSchemas = await apiClient.fetchProductSchemas(
-        config: config,
-        appInformation: appInformation,
-      );
-      final allSchemas = [...schemas, ...productSchemas];
+      // final productSchemas = await apiClient.fetchProductSchemas(
+      //   config: config,
+      //   appInformation: appInformation,
+      // );
+      final allSchemas = [...schemas, /*...productSchemas*/];
       await localDatabase.saveSchemasAndCreateTables(allSchemas);
 
       await _fileSyncService.synchronizeFromFiles(
