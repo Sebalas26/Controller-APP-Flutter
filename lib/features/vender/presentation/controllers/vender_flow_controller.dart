@@ -381,13 +381,40 @@ class VenderFlowController extends ChangeNotifier {
           appInformation: appInformation,
           reserveSupply: reserveSupply,
         );
-        catalogs = await localRepository.loadCatalogs(appInformation);
-        statusMessage =
+        var finalMessage =
             'Admision guardada localmente (${result.status}) con guia ${result.guideNumber}.';
+        if (reserveSupply && !offline) {
+          final synchronized = await _trySynchronizeSavedAdmission(
+            result.guideNumber,
+          );
+          finalMessage = synchronized
+              ? 'Admision registrada y sincronizada con guia ${result.guideNumber}.'
+              : 'Admision guardada offline con guia ${result.guideNumber}; queda pendiente para sincronizar.';
+        }
+        catalogs = await localRepository.loadCatalogs(appInformation);
+        statusMessage = finalMessage;
       });
     } finally {
       saving = false;
       notifyListeners();
+    }
+  }
+
+  Future<bool> _trySynchronizeSavedAdmission(String guideNumber) async {
+    final admission = await localRepository.pendingOfflineAdmissionByGuide(
+      guideNumber,
+    );
+    if (admission == null) return false;
+    try {
+      await remoteRepository.synchronizeOfflineAdmission(
+        config: apiConfig,
+        appInformation: appInformation,
+        admission: admission,
+      );
+      await localRepository.markOfflineAdmissionSynchronized(admission);
+      return true;
+    } on Object {
+      return false;
     }
   }
 

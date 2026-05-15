@@ -186,28 +186,61 @@ class VenderRemoteRepository {
     required AppInformation appInformation,
     required VenderOfflineAdmissionRecord admission,
   }) async {
+    final auth = await _loginIntegration(config);
+    await _markSupplyUsed(
+      config: config,
+      auth: auth,
+      guideNumber: admission.guideNumber,
+    );
     final idKey = await _idKeyProvider.createIdKey(config);
     final client = _httpClient.client(
-      config.controllerBaseUrl,
+      config.preenvioBaseUrl,
       headerSource: appInformation,
       idKey: idKey,
     );
     final response = await client.post<dynamic>(
-      'AdmisionMensajeria/RegistrarGuiaManualOffLine',
+      'Admision/CrearAdmisionRecogida/',
       data: _decodeRequestBody(admission.requestJson),
       options: Options(
         validateStatus: (status) => status != null && status < 600,
       ),
     );
     final statusCode = response.statusCode ?? 0;
-    if (statusCode == 200) return;
-    if (statusCode == 412) {
+    if (statusCode >= 200 && statusCode < 300 && response.data != null) return;
+    if (statusCode == 409 || statusCode == 412) {
       throw VenderRemoteException(
         'La guia ${admission.guideNumber} esta duplicada en la base remota.',
       );
     }
     throw VenderRemoteException(
       'No fue posible sincronizar la guia ${admission.guideNumber}. Codigo HTTP $statusCode.',
+    );
+  }
+
+  Future<void> _markSupplyUsed({
+    required ControllerApiConfig config,
+    required _IntegrationAuth auth,
+    required String guideNumber,
+  }) async {
+    final supply = int.tryParse(guideNumber.replaceAll(RegExp(r'[^0-9]'), ''));
+    if (supply == null || supply <= 0) {
+      throw VenderRemoteException(
+        'El suministro $guideNumber no es valido para sincronizar.',
+      );
+    }
+    final client = _plainClient(config.admisionOfflineBaseUrl);
+    final response = await client.post<dynamic>(
+      'suministros/usado',
+      data: {'idSuministro': supply},
+      options: Options(
+        headers: _integrationHeaders(auth),
+        validateStatus: (status) => status != null && status < 600,
+      ),
+    );
+    final statusCode = response.statusCode ?? 0;
+    if (statusCode >= 200 && statusCode < 300) return;
+    throw VenderRemoteException(
+      'No fue posible marcar el suministro $guideNumber como usado. Codigo HTTP $statusCode.',
     );
   }
 
@@ -293,6 +326,15 @@ class VenderRemoteRepository {
       ),
       'IdAplicativoOrigen': '9',
       'Identificacion': appInformation.identificacionUsuario,
+      'Content-Type': 'application/json',
+      'Accept': 'text/json',
+    };
+  }
+
+  Map<String, Object> _integrationHeaders(_IntegrationAuth auth) {
+    return {
+      'UserName': auth.userName,
+      'Token': auth.token,
       'Content-Type': 'application/json',
       'Accept': 'text/json',
     };

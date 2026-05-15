@@ -423,6 +423,30 @@ LIMIT 1
     return rows.map(VenderOfflineAdmissionRecord.fromRow).toList();
   }
 
+  Future<VenderOfflineAdmissionRecord?> pendingOfflineAdmissionByGuide(
+    String guideNumber,
+  ) async {
+    final guide = guideNumber.trim();
+    if (guide.isEmpty) return null;
+    final db = await _openDatabase();
+    await _ensureDraftTable(db);
+    await _ensureAdmissionOfflineTables(db);
+    final rows = await db.query(
+      'AdmisionMensajeriaOffLine',
+      columns: const [
+        'IdAdmisionOffline',
+        'NumeroGuia',
+        'ObjetoMensajeriaRequest',
+        'ObjetoADGuiaImpresion',
+      ],
+      where: 'EstaSincronizado = 0 AND NumeroGuia = ?',
+      whereArgs: [guide],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return VenderOfflineAdmissionRecord.fromRow(rows.first);
+  }
+
   Future<void> markOfflineAdmissionSynchronized(
     VenderOfflineAdmissionRecord admission,
   ) async {
