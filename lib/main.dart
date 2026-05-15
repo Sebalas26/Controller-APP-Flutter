@@ -232,7 +232,7 @@ class EnvironmentConfig {
   static const Map<AppEnvironment, List<String>> _environmentUrls = {
     AppEnvironment.pruebas: [
       'https://apitesting.interrapidisimo.co/ftcambios/ApiRecogidasPruebas/api/',
-      'https://apitesting.interrapidisimo.co/ftRezagos/apiControllerpruebas/api/',
+      'https://apitesting.interrapidisimo.co/FTServiciosAgiles/apiControllerpruebas/api/',
       'https://apitesting.interrapidisimo.co/FtMisMensajeros/apiSeguridadPruebas/api/',
       'https://apitesting.interrapidisimo.co/ApiRapsPruebas/api/',
       'https://apitesting.interrapidisimo.co/ApiNegocioPruebas/api/parametrosgeneralesformatos/',

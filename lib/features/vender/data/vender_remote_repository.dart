@@ -188,12 +188,12 @@ class VenderRemoteRepository {
   }) async {
     final idKey = await _idKeyProvider.createIdKey(config);
     final client = _httpClient.client(
-      config.controllerBaseUrl,
+      config.preenvioBaseUrl,
       headerSource: appInformation,
       idKey: idKey,
     );
     final response = await client.post<dynamic>(
-      'AdmisionMensajeria/RegistrarGuiaManualOffLine',
+      'Admision/CrearAdmisionRecogida',
       data: _decodeRequestBody(admission.requestJson),
       options: Options(
         validateStatus: (status) => status != null && status < 600,
