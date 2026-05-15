@@ -324,6 +324,39 @@ class VenderFlowController extends ChangeNotifier {
     });
   }
 
+  Future<void> synchronizeOfflineAdmissions() async {
+    await _remoteGuard(() async {
+      final admissions = await localRepository.pendingOfflineAdmissions();
+      if (admissions.isEmpty) {
+        statusMessage = 'No hay admisiones offline para sincronizar.';
+        return;
+      }
+      var synchronized = 0;
+      final failedGuides = <String>[];
+      for (final admission in admissions) {
+        try {
+          await remoteRepository.synchronizeOfflineAdmission(
+            config: apiConfig,
+            appInformation: appInformation,
+            admission: admission,
+          );
+          await localRepository.markOfflineAdmissionSynchronized(admission);
+          synchronized += 1;
+        } on Object {
+          failedGuides.add(admission.guideNumber);
+        }
+      }
+      catalogs = await localRepository.loadCatalogs(appInformation);
+      if (failedGuides.isNotEmpty) {
+        throw VenderRemoteException(
+          'Se sincronizaron $synchronized de ${admissions.length} admisiones. '
+          'Pendientes: ${failedGuides.take(3).join(', ')}.',
+        );
+      }
+      statusMessage = 'Sincronizacion exitosa de $synchronized admisiones.';
+    });
+  }
+
   int _configuredSupplyTarget() {
     final parameters = catalogs?.parameters ?? const <String, String>{};
     for (final key in const ['CantidadSuministros', 'MaximoGuiasOffLine']) {
@@ -345,6 +378,7 @@ class VenderFlowController extends ChangeNotifier {
       await _guard(() async {
         final result = await localRepository.saveDraft(
           draft: _buildDraft(),
+          appInformation: appInformation,
           reserveSupply: reserveSupply,
         );
         catalogs = await localRepository.loadCatalogs(appInformation);
@@ -488,6 +522,7 @@ class VenderFlowController extends ChangeNotifier {
       destination: {
         'cityId': destinationCity?.id,
         'cityLabel': destinationCity?.label,
+        'cityRaw': destinationCity?.raw,
         'deliveryTypeId': deliveryType?.id,
         'deliveryTypeLabel': deliveryType?.label,
       },
@@ -496,6 +531,9 @@ class VenderFlowController extends ChangeNotifier {
         'pieces': pieces.text.trim(),
         'weightScale': weightScale.text.trim(),
         'weightVolume': weightVolume.text.trim(),
+        'length': length.text.trim(),
+        'width': width.text.trim(),
+        'height': height.text.trim(),
         'finalWeight': finalWeight,
         'declaredValue': commercialValue,
         'paymentMethodId': paymentMethod?.id,
@@ -509,6 +547,7 @@ class VenderFlowController extends ChangeNotifier {
         'shippingTypeLabel': shippingType?.label,
         'serviceId': selectedQuote?.id,
         'serviceLabel': selectedQuote?.name,
+        'deliveryDays': selectedQuote?.deliveryDays,
         'baseValue': selectedQuote?.baseValue,
         'insuranceValue': selectedQuote?.insuranceValue,
         'totalValue': selectedQuote?.totalValue,

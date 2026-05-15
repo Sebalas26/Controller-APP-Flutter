@@ -342,6 +342,22 @@ class VenderDraft {
       'recipient': recipient,
     };
   }
+
+  factory VenderDraft.fromJson(Map<String, dynamic> json) {
+    return VenderDraft(
+      createdAt:
+          DateTime.tryParse(_readString(json, const ['createdAt'])) ??
+          DateTime.now(),
+      status: _readString(json, const ['status']),
+      guideNumber: _readString(json, const ['guideNumber']),
+      origin: _readMap(json, const ['origin']),
+      destination: _readMap(json, const ['destination']),
+      initialData: _readMap(json, const ['initialData']),
+      settlement: _readMap(json, const ['settlement']),
+      sender: _readMap(json, const ['sender']),
+      recipient: _readMap(json, const ['recipient']),
+    );
+  }
 }
 
 class VenderSaveResult {
@@ -354,6 +370,30 @@ class VenderSaveResult {
   final int id;
   final String guideNumber;
   final String status;
+}
+
+class VenderOfflineAdmissionRecord {
+  const VenderOfflineAdmissionRecord({
+    required this.id,
+    required this.guideNumber,
+    required this.requestJson,
+    required this.printJson,
+  });
+
+  final int id;
+  final String guideNumber;
+  final String requestJson;
+  final String printJson;
+
+  factory VenderOfflineAdmissionRecord.fromRow(Map<String, Object?> row) {
+    final json = Map<String, dynamic>.from(row);
+    return VenderOfflineAdmissionRecord(
+      id: int.tryParse(_readString(json, const ['IdAdmisionOffline'])) ?? 0,
+      guideNumber: _readString(json, const ['NumeroGuia']),
+      requestJson: _readString(json, const ['ObjetoMensajeriaRequest']),
+      printJson: _readString(json, const ['ObjetoADGuiaImpresion']),
+    );
+  }
 }
 
 class VenderLocalException implements Exception {

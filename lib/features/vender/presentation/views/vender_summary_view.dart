@@ -64,12 +64,29 @@ class VenderSummaryView extends StatelessWidget {
                     'Admisiones pendientes: ${catalogs.pendingOfflineAdmissions}',
                   ),
                   const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: controller.busyRemote
-                        ? null
-                        : () => runAction(controller.refreshSupplies),
-                    icon: const Icon(Icons.sync),
-                    label: const Text('Recargar suministros'),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: controller.busyRemote
+                            ? null
+                            : () => runAction(controller.refreshSupplies),
+                        icon: const Icon(Icons.sync),
+                        label: const Text('Recargar suministros'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed:
+                            controller.busyRemote ||
+                                catalogs.pendingOfflineAdmissions == 0
+                            ? null
+                            : () => runAction(
+                                controller.synchronizeOfflineAdmissions,
+                              ),
+                        icon: const Icon(Icons.cloud_upload_outlined),
+                        label: const Text('Sincronizar admisiones'),
+                      ),
+                    ],
                   ),
                 ],
               ),

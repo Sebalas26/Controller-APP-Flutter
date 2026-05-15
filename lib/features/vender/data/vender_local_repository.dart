@@ -17,6 +17,7 @@ class VenderLocalRepository {
     final db = await _openDatabase();
     await _ensureDraftTable(db);
     await _ensureAdmissionOfflineTables(db);
+    await _backfillNativeOfflineAdmissions(db, appInformation);
     final sql = '''
       SELECT 
         Localidad_PAR.LOC_IdLocalidad, 
@@ -127,13 +128,7 @@ class VenderLocalRepository {
       parameters: await _loadAdmissionParameters(db),
       availableSupplies: await _availableSuppliesCount(db),
       usedSupplies: await _usedSuppliesCount(db),
-      pendingOfflineAdmissions:
-          await _countRows(
-            db,
-            'AdmisionMensajeriaOffLine',
-            where: 'EstaSincronizado = 0',
-          ) +
-          await _countRows(db, 'vender_drafts', where: "status <> 'synced'"),
+      pendingOfflineAdmissions: await _pendingOfflineAdmissionsCount(db),
     );
   }
 
@@ -373,6 +368,7 @@ LIMIT 1
 
   Future<VenderSaveResult> saveDraft({
     required VenderDraft draft,
+    required AppInformation appInformation,
     required bool reserveSupply,
   }) async {
     final db = await _openDatabase();
@@ -396,8 +392,63 @@ LIMIT 1
         'sender_document': _stringValue(payload.sender['document']),
         'recipient_document': _stringValue(payload.recipient['document']),
       });
+      if (reserveSupply) {
+        await _insertNativeOfflineAdmission(
+          txn,
+          draft: payload,
+          appInformation: appInformation,
+          createdAt: DateTime.now(),
+        );
+      }
 
       return VenderSaveResult(id: id, guideNumber: guideNumber, status: status);
+    });
+  }
+
+  Future<List<VenderOfflineAdmissionRecord>> pendingOfflineAdmissions() async {
+    final db = await _openDatabase();
+    await _ensureDraftTable(db);
+    await _ensureAdmissionOfflineTables(db);
+    final rows = await db.query(
+      'AdmisionMensajeriaOffLine',
+      columns: const [
+        'IdAdmisionOffline',
+        'NumeroGuia',
+        'ObjetoMensajeriaRequest',
+        'ObjetoADGuiaImpresion',
+      ],
+      where: 'EstaSincronizado = 0',
+      orderBy: 'IdAdmisionOffline ASC',
+    );
+    return rows.map(VenderOfflineAdmissionRecord.fromRow).toList();
+  }
+
+  Future<void> markOfflineAdmissionSynchronized(
+    VenderOfflineAdmissionRecord admission,
+  ) async {
+    final db = await _openDatabase();
+    await _ensureDraftTable(db);
+    await _ensureAdmissionOfflineTables(db);
+    await db.transaction((txn) async {
+      if (admission.id > 0) {
+        await txn.delete(
+          'AdmisionMensajeriaOffLine',
+          where: 'IdAdmisionOffline = ?',
+          whereArgs: [admission.id],
+        );
+      } else {
+        await txn.delete(
+          'AdmisionMensajeriaOffLine',
+          where: 'NumeroGuia = ?',
+          whereArgs: [admission.guideNumber],
+        );
+      }
+      await txn.update(
+        'vender_drafts',
+        {'status': 'synced', 'updated_at': DateTime.now().toIso8601String()},
+        where: 'guide_number = ?',
+        whereArgs: [admission.guideNumber],
+      );
     });
   }
 
@@ -445,6 +496,534 @@ CREATE TABLE IF NOT EXISTS AdmisionMensajeriaOffLine (
   FechaSincronizacion NUMERIC NULL
 )
 ''');
+  }
+
+  Future<void> _backfillNativeOfflineAdmissions(
+    Database db,
+    AppInformation appInformation,
+  ) async {
+    final rows = await db.rawQuery('''
+SELECT id, payload_json, guide_number
+FROM vender_drafts
+WHERE status = 'pending_offline'
+  AND COALESCE(TRIM(guide_number), '') <> ''
+  AND NOT EXISTS (
+    SELECT 1
+    FROM AdmisionMensajeriaOffLine adm
+    WHERE adm.NumeroGuia = vender_drafts.guide_number
+      AND adm.EstaSincronizado = 0
+  )
+ORDER BY id ASC
+''');
+    if (rows.isEmpty) return;
+    await db.transaction((txn) async {
+      for (final row in rows) {
+        try {
+          final decoded = jsonDecode(_stringValue(row['payload_json']));
+          if (decoded is! Map) continue;
+          final draft = VenderDraft.fromJson(
+            Map<String, dynamic>.from(decoded),
+          );
+          final guide = _stringValue(row['guide_number']).trim();
+          await _insertNativeOfflineAdmission(
+            txn,
+            draft: draft.copyWith(guideNumber: guide),
+            appInformation: appInformation,
+            createdAt: draft.createdAt,
+          );
+        } on Object {
+          continue;
+        }
+      }
+    });
+  }
+
+  Future<void> _insertNativeOfflineAdmission(
+    DatabaseExecutor db, {
+    required VenderDraft draft,
+    required AppInformation appInformation,
+    required DateTime createdAt,
+  }) async {
+    final guide = draft.guideNumber.trim();
+    if (guide.isEmpty) return;
+    final request = _nativeAdmissionRequest(
+      draft,
+      appInformation: appInformation,
+      createdAt: createdAt,
+    );
+    final printPayload = _nativePrintPayload(
+      draft,
+      appInformation: appInformation,
+      createdAt: createdAt,
+    );
+    await db.delete(
+      'AdmisionMensajeriaOffLine',
+      where: 'NumeroGuia = ? AND EstaSincronizado = 0',
+      whereArgs: [guide],
+    );
+    await db.insert('AdmisionMensajeriaOffLine', {
+      'NumeroGuia': guide,
+      'ObjetoMensajeriaRequest': jsonEncode(request),
+      'ObjetoADGuiaImpresion': jsonEncode(printPayload),
+      'EstaSincronizado': 0,
+      'FechaSincronizacion': _sqliteDateTime(createdAt),
+    });
+  }
+
+  Map<String, Object?> _nativeAdmissionRequest(
+    VenderDraft draft, {
+    required AppInformation appInformation,
+    required DateTime createdAt,
+  }) {
+    final origin = draft.origin;
+    final destination = draft.destination;
+    final initial = draft.initialData;
+    final settlement = draft.settlement;
+    final sender = draft.sender;
+    final recipient = draft.recipient;
+    final guide = draft.guideNumber.trim();
+    final deliveryDays = _mapInt(settlement, 'deliveryDays');
+    final estimatedDate = createdAt.add(
+      Duration(days: math.max(0, deliveryDays)),
+    );
+    final senderThird = _nativeThirdParty(
+      sender,
+      cityId: _mapString(origin, 'cityId'),
+      fechaGrabacion: _controllerDateTime(createdAt),
+    );
+    final recipientThird = _nativeThirdParty(
+      recipient,
+      cityId: _mapString(destination, 'cityId'),
+      fechaGrabacion: _controllerDateTime(createdAt),
+    );
+    final admissionPreenvio = <String, Object?>{
+      'idPreenvio': 0,
+      'numeroPreenvio': _longValue(guide),
+      'idPreenvioRecogida': 0,
+      'idUnidadNegocio': 'MEN',
+      'idServicio': _mapInt(settlement, 'serviceId'),
+      'idTipoEntrega': _mapString(destination, 'deliveryTypeId'),
+      'idCentroServicioOrigen': _mapInt(origin, 'serviceCenterId'),
+      'nombreCentroServicioOrigen': _mapString(origin, 'serviceCenterLabel'),
+      'idCentroServicioDestino': 0,
+      'idPaisOrigen': '057',
+      'idCiudadOrigen': _mapString(origin, 'cityId'),
+      'codigoPostalOrigen': '',
+      'idPaisDestino': '057',
+      'idCiudadDestino': _mapString(destination, 'cityId'),
+      'codigoPostalDestino': _postalCode(recipient, destination),
+      'tipoCliente': '',
+      'diasDeEntrega': deliveryDays,
+      'fechaEstimadaEntrega': _controllerDateTime(estimatedDate),
+      'valorTotal': _mapDouble(settlement, 'totalValue'),
+      'valorDeclarado': _mapDouble(initial, 'declaredValue'),
+      'diceContener': _upper(_mapString(settlement, 'content')),
+      'peso': _mapDouble(initial, 'finalWeight').ceil(),
+      'idTipoEnvio': _mapInt(settlement, 'shippingTypeId'),
+      'esAlCobro': _isCollectPayment(draft),
+      'numeroPieza': _mapInt(initial, 'pieces', fallback: 1),
+      'idFormaPago': _mapInt(initial, 'paymentMethodId'),
+      'nombreFormaPago': _mapString(initial, 'paymentMethodLabel'),
+      'nombreServicio': _mapString(settlement, 'serviceLabel'),
+      'descripcionTipoEntrega': _mapString(destination, 'deliveryTypeLabel'),
+      'nombreCiudadOrigen': _mapString(origin, 'cityLabel'),
+      'nombreCiudadDestino': _mapString(destination, 'cityLabel'),
+      'valorAdmision': _mapDouble(settlement, 'baseValue'),
+      'valorTotalImpuestos': 0,
+      'valorTotalRetenciones': 0,
+      'valorPrimaSeguro': _mapDouble(settlement, 'insuranceValue'),
+      'valorEmpaque': 0,
+      'valorAdicionales': 0,
+      'valorContraPago': 0,
+      'observaciones': _mapString(settlement, 'observations'),
+      'pesoLiqVolumetrico': _mapDouble(initial, 'weightVolume').ceil(),
+      'pesoLiqMasa': _mapDouble(initial, 'weightScale').ceil(),
+      'esPesoVolumetrico':
+          _mapDouble(initial, 'weightVolume') >
+          _mapDouble(initial, 'weightScale'),
+      'numeroBolsaSeguridad': _mapString(settlement, 'securityBag'),
+      'idMotivoNoUsoBolsaSegurida': 0,
+      'motivoNoUsoBolsaSeguriDesc': '',
+      'noUsoaBolsaSeguridadObserv': '',
+      'idUnidadMedida': 'kg',
+      'largo': _mapDouble(initial, 'length'),
+      'ancho': _mapDouble(initial, 'width'),
+      'alto': _mapDouble(initial, 'height'),
+      'nombreTipoEnvio': _mapString(settlement, 'shippingTypeLabel'),
+      'emailRemitente': _mapString(sender, 'email'),
+      'emailDestinatario': _mapString(recipient, 'email'),
+      'idCaja': _intValue(appInformation.idCaja),
+      'remitente': senderThird,
+      'destinatario': recipientThird,
+      'idPreFactura': 0,
+      'idMensajero': _intValue(appInformation.idMensajero),
+      'verificacionContenido': _mapBool(settlement, 'contentChecked'),
+      'esPagoEnCasa': _mapBool(initial, 'paymentAtHome'),
+      'FueraHorario': false,
+      'offline': true,
+    };
+    final guidePayload = <String, Object?>{
+      'NumeroGuia': guide,
+      'IdCentroServicioOrigen': _mapInt(origin, 'serviceCenterId'),
+      'Caja': _intValue(appInformation.idCaja),
+      'IdServicio': _mapInt(settlement, 'serviceId'),
+      'IdListaPrecios': 0,
+      'DiasDeEntrega': deliveryDays,
+      'TotalPiezas': _mapInt(initial, 'pieces', fallback: 1),
+      'IdTipoEnvio': _mapInt(settlement, 'shippingTypeId'),
+      'EsAutomatico': true,
+      'EsPesoVolumetrico':
+          _mapDouble(initial, 'weightVolume') >
+          _mapDouble(initial, 'weightScale'),
+      'AdmisionSistemaMensajero': true,
+      'EsAlCobro': _isCollectPayment(draft),
+      'EstaPagada': !_isCollectPayment(draft),
+      'EsPagoEnCasa': _mapBool(initial, 'paymentAtHome'),
+      'IdUnidadNegocio': 'MEN',
+      'NombreServicio': _mapString(settlement, 'serviceLabel'),
+      'IdTipoEntrega': _mapString(destination, 'deliveryTypeId'),
+      'NombreCentroServicioOrigen': _mapString(origin, 'serviceCenterLabel'),
+      'IdPaisOrigen': '057',
+      'NombrePaisOrigen': 'COLOMBIA',
+      'IdCiudadOrigen': _mapString(origin, 'cityId'),
+      'NombreCiudadOrigen': _mapString(origin, 'cityLabel'),
+      'IdPaisDestino': '057',
+      'NombrePaisDestino': 'COLOMBIA',
+      'IdCiudadDestino': _mapString(destination, 'cityId'),
+      'NombreCiudadDestino': _mapString(destination, 'cityLabel'),
+      'TelefonoDestinatario': _mapString(recipient, 'phone'),
+      'Observaciones': _mapString(settlement, 'observations'),
+      'NumeroBolsaSeguridad': _mapString(settlement, 'securityBag'),
+      'IdUnidadMedida': 'kg',
+      'NombreTipoEnvio': _mapString(settlement, 'shippingTypeLabel'),
+      'NombreMensajero': appInformation.nombreMensajero,
+      'FechaAdmision': _controllerDateTime(createdAt),
+      'FechaGrabacion': _controllerDateTime(createdAt),
+      'FechaEstimadaEntrega': _controllerDateTime(estimatedDate),
+      'DiceContener': _upper(_mapString(settlement, 'content')),
+      'CodigoPostalOrigen': '',
+      'CreadoPor': appInformation.idUsuario,
+      'CodigoPostalDestino': _postalCode(recipient, destination),
+      'DescripcionTipoEntrega': _mapString(destination, 'deliveryTypeLabel'),
+      'DireccionDestinatario': _upper(_mapString(recipient, 'address')),
+      'ValorAdmision': _mapDouble(settlement, 'baseValue'),
+      'ValorTotal': _mapDouble(settlement, 'totalValue'),
+      'ValorTotalImpuestos': 0,
+      'ValorTotalRetenciones': 0,
+      'ValorPrimaSeguro': _mapDouble(settlement, 'insuranceValue'),
+      'ValorEmpaque': 0,
+      'ValorAdicionales': 0,
+      'ValorDeclarado': _mapDouble(initial, 'declaredValue'),
+      'Peso': _mapDouble(initial, 'finalWeight'),
+      'PesoLiqMasa': _mapDouble(initial, 'weightScale'),
+      'Largo': _mapDouble(initial, 'length'),
+      'Ancho': _mapDouble(initial, 'width'),
+      'Alto': _mapDouble(initial, 'height'),
+      'ValorServicio': _mapDouble(settlement, 'baseValue'),
+      'valorContraPago': 0,
+      'IdMensajero': _intValue(appInformation.idMensajero),
+      'IdCodigoUsuario': _intValue(appInformation.idUsuario),
+      'PesoLiqVolumetrico': _mapDouble(initial, 'weightVolume'),
+      'FormasPago': [
+        {
+          'IdFormaPago': _mapInt(initial, 'paymentMethodId'),
+          'Valor': _mapDouble(settlement, 'totalValue'),
+        },
+      ],
+    };
+    return {
+      'Guia': guidePayload,
+      'idCaja': _intValue(appInformation.idCaja),
+      'RemitenteDestinatario': {
+        'FacturaRemitente': false,
+        'IdContratoConvenioRemitente': 0,
+        'ConvenioRemitente': null,
+        'ConvenioDestinatario': null,
+        'PeatonRemitente': senderThird,
+        'PeatonDestinatario': recipientThird,
+      },
+      'Notificacion': _nativeNotification(draft, createdAt),
+      'Radicado': <String, Object?>{},
+      'admisionPreenvio': admissionPreenvio,
+      'recogidaPreenvio': _nativePickupSender(
+        draft,
+        appInformation: appInformation,
+        createdAt: createdAt,
+      ),
+      'IdPreFactura': 0,
+    };
+  }
+
+  Map<String, Object?> _nativePrintPayload(
+    VenderDraft draft, {
+    required AppInformation appInformation,
+    required DateTime createdAt,
+  }) {
+    final origin = draft.origin;
+    final destination = draft.destination;
+    final initial = draft.initialData;
+    final settlement = draft.settlement;
+    final sender = draft.sender;
+    final recipient = draft.recipient;
+    final deliveryDays = _mapInt(settlement, 'deliveryDays');
+    final estimatedDate = createdAt.add(
+      Duration(days: math.max(0, deliveryDays)),
+    );
+    return {
+      'NumeroGuia': draft.guideNumber.trim(),
+      'FechaEstimadaEntrega': _ticketDateTime(estimatedDate),
+      'FechaPreenvio': _ticketDateTime(createdAt),
+      'NombreCiudadDestinatario': _upper(_mapString(destination, 'cityLabel')),
+      'CodigoCiudadDestinatario': _mapString(destination, 'cityId'),
+      'NombreDestinatario': _upper(_fullName(recipient)),
+      'NumeroIdentificacionDestinatario': _mapString(recipient, 'document'),
+      'TelefonoDestinatario': _mapString(recipient, 'phone'),
+      'DireccionDestinatario': _upper(_mapString(recipient, 'address')),
+      'CodigoPostalDestino': _postalCode(recipient, destination),
+      'NombreRemitente': _upper(_fullName(sender)),
+      'NumeroIdentificacionRemitente': _mapString(sender, 'document'),
+      'TelefonoRemitente': _mapString(sender, 'phone'),
+      'DireccionRemitente': _upper(_mapString(sender, 'address')),
+      'NombreCiudadRemitente': _upper(_mapString(origin, 'cityLabel')),
+      'CodigoCiudadRemitente': _mapString(origin, 'cityId'),
+      'EmailRemitente': _upper(_mapString(sender, 'email')),
+      'CodigoPostalRemitente': _postalCode(sender, origin),
+      'TipoEmpaque': _upper(_mapString(settlement, 'packageLabel')),
+      'NumeroPiezas': _mapString(initial, 'pieces'),
+      'Peso': _mapDouble(initial, 'finalWeight').toString(),
+      'BolsaSeguridad': _upper(_mapString(settlement, 'securityBag')),
+      'DiceContener': _upper(_mapString(settlement, 'content')),
+      'TipoEnvio': _upper(_mapString(settlement, 'shippingTypeLabel')),
+      'FormaPago': _upper(_mapString(initial, 'paymentMethodLabel')),
+      'NombreServicio': _upper(_mapString(settlement, 'serviceLabel')),
+      'FranjaServicio': '',
+      'IdServicio': _mapInt(settlement, 'serviceId'),
+      'ValorContraPago': 0,
+      'ValorDeclarado': _mapDouble(initial, 'declaredValue'),
+      'ValorComercial': _mapDouble(initial, 'declaredValue').toString(),
+      'ValorTransporte': _mapDouble(settlement, 'baseValue').toString(),
+      'ValorPrima': _mapDouble(settlement, 'insuranceValue').toString(),
+      'ValorOtros': '0',
+      'ValorTotal': _mapDouble(settlement, 'totalValue').toString(),
+      'AfectaTiempos': false,
+      'FueraHorario': false,
+      'FechaEstimadaEntregaNew': '',
+      'IdTipoEntrega': _mapString(destination, 'deliveryTypeId'),
+      'isAdmisionDirecta': false,
+      'isFromPreenvioCobroPagoCasa': false,
+      'observacion': _mapString(settlement, 'observations'),
+      'offline': true,
+      'errorPuertasCasilleros': false,
+      'fromReimpresion': false,
+      'idCentroServicioOrigen': _mapInt(origin, 'serviceCenterId'),
+      'pagoEnCasa': _mapBool(initial, 'paymentAtHome'),
+      'idTipoVivienda': _mapInt(recipient, 'propertyTypeId'),
+      'tipoEntrega': _mapString(destination, 'deliveryTypeLabel'),
+      'microZona': _geoString(recipient, 'microZona'),
+      'macroZona': _geoString(recipient, 'macroZona'),
+    };
+  }
+
+  Map<String, Object?> _nativeThirdParty(
+    Map<String, Object?> person, {
+    required String cityId,
+    required String fechaGrabacion,
+  }) {
+    return {
+      'idDestinatario': 0,
+      'idRemitente': 0,
+      'tipoDocumento': _mapString(person, 'identificationTypeId'),
+      'nombre': _upper(_mapString(person, 'name')),
+      'primerApellido': _upper(_nativeFirstLastName(person)),
+      'segundoApellido': _upper(_mapString(person, 'secondLastName')),
+      'telefono': _mapString(person, 'phone'),
+      'direccion': _upper(_mapString(person, 'address')),
+      'correo': _upper(_mapString(person, 'email')),
+      'fechaGrabacion': fechaGrabacion,
+      'numeroDocumento': _mapString(person, 'document'),
+      'convenioDestinatario': 0,
+      'idTipoVivienda': _mapInt(person, 'propertyTypeId'),
+      'IdDireccionGeneral': _geoInt(person, 'idDireccionGeneral'),
+      'Valor': 0,
+      'microZona': _geoString(person, 'microZona'),
+      'macroZona': _geoString(person, 'macroZona'),
+      'latitud': _geoString(person, 'latitude'),
+      'longitud': _geoString(person, 'longitude'),
+      'zonaPostal': _postalCode(person, const <String, Object?>{}),
+      'idLocalidad': _geoString(person, 'idLocalidad').trim().isNotEmpty
+          ? _geoString(person, 'idLocalidad')
+          : cityId,
+      'NumeroAsociadoFormaPago': '',
+    };
+  }
+
+  Map<String, Object?> _nativePickupSender(
+    VenderDraft draft, {
+    required AppInformation appInformation,
+    required DateTime createdAt,
+  }) {
+    final sender = draft.sender;
+    final origin = draft.origin;
+    return {
+      'NumeroDocumento': _mapString(sender, 'document'),
+      'Nombre': _upper(_fullName(sender)),
+      'Direccion': _upper(_mapString(sender, 'address')),
+      'Ciudad': _mapString(origin, 'cityId'),
+      'nombreCiudad': _mapString(origin, 'cityLabel'),
+      'NumeroTelefono': _mapString(sender, 'phone'),
+      'FechaRecogida': _controllerDateTime(
+        createdAt.add(const Duration(hours: 1)),
+      ),
+      'TipoRecogida': 2,
+      'nombreLocalidad': _mapString(draft.destination, 'cityLabel'),
+      'longitud': _geoString(sender, 'longitude'),
+      'latitud': _geoString(sender, 'latitude'),
+      'tipoDocumento': _mapString(sender, 'identificationTypeId'),
+      'nombreCompleto': _upper(_fullName(sender)),
+      'correo': _upper(_mapString(sender, 'email')),
+      'PreguntarPor': '',
+      'DocPersonaResponsable': appInformation.identificacionUsuario,
+      'descripcionEnvios': _mapString(draft.settlement, 'content'),
+    };
+  }
+
+  Map<String, Object?> _nativeNotification(
+    VenderDraft draft,
+    DateTime createdAt,
+  ) {
+    final recipient = draft.recipient;
+    final destination = draft.destination;
+    return {
+      'idNotificacion': 0,
+      'idAdmisionPreenvio': 0,
+      'idDestinatario': 0,
+      'idTipoDestino': _mapString(recipient, 'identificationTypeId'),
+      'idCiudadDestino': _mapString(destination, 'cityId'),
+      'fechaGrabacion': _controllerDateTime(createdAt),
+      'direccionDestinatario': _upper(_mapString(recipient, 'address')),
+      'nombreCiudadDestino': _mapString(destination, 'cityLabel'),
+      'tipoDestino': _mapString(recipient, 'identificationTypeLabel'),
+      'entregarDireccionRemitente': false,
+      'NombreDestinatario': _upper(_mapString(recipient, 'name')),
+      'Apellido1Destinatario': _upper(_mapString(recipient, 'firstLastName')),
+      'Apellido2Destinatario': _upper(_mapString(recipient, 'secondLastName')),
+      'TelefonoDestinatario': _mapString(recipient, 'phone'),
+      'EmailDestinatario': _upper(_mapString(recipient, 'email')),
+      'TipoIdentificacionDestinatario': _mapString(
+        recipient,
+        'identificationTypeId',
+      ),
+    };
+  }
+
+  bool _isCollectPayment(VenderDraft draft) {
+    final id = _mapString(draft.initialData, 'paymentMethodId').trim();
+    final label = _mapString(
+      draft.initialData,
+      'paymentMethodLabel',
+    ).trim().toUpperCase();
+    return id == '3' || label.contains('AL COBRO');
+  }
+
+  String _fullName(Map<String, Object?> person) {
+    return [
+      _mapString(person, 'name'),
+      _mapString(person, 'firstLastName'),
+      _mapString(person, 'secondLastName'),
+    ].where((part) => part.trim().isNotEmpty).join(' ').trim();
+  }
+
+  String _nativeFirstLastName(Map<String, Object?> person) {
+    final type = _mapString(
+      person,
+      'identificationTypeId',
+    ).trim().toUpperCase();
+    if (type == 'NI') return '.';
+    return _mapString(person, 'firstLastName');
+  }
+
+  String _postalCode(
+    Map<String, Object?> person,
+    Map<String, Object?> location,
+  ) {
+    final rawLocation = location['cityRaw'] is Map
+        ? Map<String, Object?>.from(location['cityRaw'] as Map)
+        : const <String, Object?>{};
+    for (final key in const [
+      'zonaPostal',
+      'ZonaPostal',
+      'zonapostal',
+      'codigoPostal',
+      'CodigoPostal',
+      'LOC_CodigoPostal',
+    ]) {
+      final value = _geoString(person, key).trim();
+      if (value.isNotEmpty && value != '0') return value;
+      final locationValue = _mapString(location, key).trim();
+      if (locationValue.isNotEmpty && locationValue != '0') {
+        return locationValue;
+      }
+      final rawValue = _mapString(rawLocation, key).trim();
+      if (rawValue.isNotEmpty && rawValue != '0') return rawValue;
+    }
+    return '';
+  }
+
+  Map<String, Object?> _geo(Map<String, Object?> person) {
+    final value = person['geo'];
+    if (value is Map<String, Object?>) return value;
+    if (value is Map) return Map<String, Object?>.from(value);
+    return const <String, Object?>{};
+  }
+
+  String _geoString(Map<String, Object?> person, String key) {
+    final geo = _geo(person);
+    final lowerIndex = {
+      for (final entry in geo.entries) entry.key.toLowerCase(): entry.value,
+    };
+    return _stringValue(geo[key] ?? lowerIndex[key.toLowerCase()]);
+  }
+
+  int _geoInt(Map<String, Object?> person, String key) {
+    return _intValue(_geoString(person, key));
+  }
+
+  String _mapString(Map<String, Object?> map, String key) {
+    return _stringValue(map[key]);
+  }
+
+  int _mapInt(Map<String, Object?> map, String key, {int fallback = 0}) {
+    final value = _intValue(map[key]);
+    return value == 0 ? fallback : value;
+  }
+
+  double _mapDouble(Map<String, Object?> map, String key) {
+    return _doubleValue(map[key]);
+  }
+
+  bool _mapBool(Map<String, Object?> map, String key) {
+    return _boolish(map[key]);
+  }
+
+  int _longValue(String value) {
+    return int.tryParse(value.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+  }
+
+  String _upper(String value) {
+    return value.trim().toUpperCase();
+  }
+
+  String _controllerDateTime(DateTime value) {
+    String two(int input) => input.toString().padLeft(2, '0');
+    return '${value.year.toString().padLeft(4, '0')}-'
+        '${two(value.month)}-${two(value.day)}T'
+        '${two(value.hour)}:${two(value.minute)}:${two(value.second)}Z';
+  }
+
+  String _ticketDateTime(DateTime value) {
+    String two(int input) => input.toString().padLeft(2, '0');
+    return '${two(value.day)}/${two(value.month)}/${value.year} '
+        '${two(value.hour)}:${two(value.minute)}';
   }
 
   Future<int> _currentPriceListId(Database db) async {
@@ -1057,13 +1636,15 @@ LIMIT 1
           : '$customQuery LIMIT $limit';
 
       final rows = await db.rawQuery(queryWithLimit);
-      
+
       return rows
-          .map((row) => _optionFromRow(
-                row,
-                idColumns: idColumns,
-                labelColumns: labelColumns,
-              ))
+          .map(
+            (row) => _optionFromRow(
+              row,
+              idColumns: idColumns,
+              labelColumns: labelColumns,
+            ),
+          )
           .where((item) => item.hasValue)
           .toList();
     }
@@ -1193,6 +1774,20 @@ LIMIT 1
       where: 'Utilizado <> 0',
     );
     return math.max(admision, legacy);
+  }
+
+  Future<int> _pendingOfflineAdmissionsCount(DatabaseExecutor db) async {
+    final native = await _countRows(
+      db,
+      'AdmisionMensajeriaOffLine',
+      where: 'EstaSincronizado = 0',
+    );
+    final drafts = await _countRows(
+      db,
+      'vender_drafts',
+      where: "status <> 'synced'",
+    );
+    return math.max(native, drafts);
   }
 
   Future<String> _reserveSupply(

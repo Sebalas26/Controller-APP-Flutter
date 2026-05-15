@@ -181,6 +181,36 @@ class VenderRemoteRepository {
     return supplies;
   }
 
+  Future<void> synchronizeOfflineAdmission({
+    required ControllerApiConfig config,
+    required AppInformation appInformation,
+    required VenderOfflineAdmissionRecord admission,
+  }) async {
+    final idKey = await _idKeyProvider.createIdKey(config);
+    final client = _httpClient.client(
+      config.controllerBaseUrl,
+      headerSource: appInformation,
+      idKey: idKey,
+    );
+    final response = await client.post<dynamic>(
+      'AdmisionMensajeria/RegistrarGuiaManualOffLine',
+      data: _decodeRequestBody(admission.requestJson),
+      options: Options(
+        validateStatus: (status) => status != null && status < 600,
+      ),
+    );
+    final statusCode = response.statusCode ?? 0;
+    if (statusCode == 200) return;
+    if (statusCode == 412) {
+      throw VenderRemoteException(
+        'La guia ${admission.guideNumber} esta duplicada en la base remota.',
+      );
+    }
+    throw VenderRemoteException(
+      'No fue posible sincronizar la guia ${admission.guideNumber}. Codigo HTTP $statusCode.',
+    );
+  }
+
   Future<String> fetchGeoToken(ControllerApiConfig config) async {
     final client = _plainClient(config.geoRefTokenBaseUrl);
     final response = await client.post<dynamic>(
@@ -310,6 +340,14 @@ class VenderRemoteRepository {
     final map = _asMapOrNull(data);
     if (map != null) return map;
     throw const VenderRemoteException('Respuesta remota invalida en Vender.');
+  }
+
+  Object _decodeRequestBody(String requestJson) {
+    final decoded = jsonDecode(requestJson);
+    if (decoded is Map || decoded is List) return decoded;
+    throw const VenderRemoteException(
+      'La admision offline tiene un JSON invalido para sincronizar.',
+    );
   }
 
   Map<String, dynamic>? _asMapOrNull(dynamic data) {
