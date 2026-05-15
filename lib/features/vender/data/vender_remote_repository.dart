@@ -190,6 +190,7 @@ class VenderRemoteRepository {
     await _markSupplyUsed(
       config: config,
       auth: auth,
+      appInformation: appInformation,
       guideNumber: admission.guideNumber,
     );
     final idKey = await _idKeyProvider.createIdKey(config);
@@ -220,6 +221,7 @@ class VenderRemoteRepository {
   Future<void> _markSupplyUsed({
     required ControllerApiConfig config,
     required _IntegrationAuth auth,
+    required AppInformation appInformation,
     required String guideNumber,
   }) async {
     final supply = int.tryParse(guideNumber.replaceAll(RegExp(r'[^0-9]'), ''));
@@ -233,7 +235,7 @@ class VenderRemoteRepository {
       'suministros/usado',
       data: {'idSuministro': supply},
       options: Options(
-        headers: _integrationHeaders(auth),
+        headers: _admissionOfflineHeaders(auth, appInformation),
         validateStatus: (status) => status != null && status < 600,
       ),
     );
@@ -326,15 +328,6 @@ class VenderRemoteRepository {
       ),
       'IdAplicativoOrigen': '9',
       'Identificacion': appInformation.identificacionUsuario,
-      'Content-Type': 'application/json',
-      'Accept': 'text/json',
-    };
-  }
-
-  Map<String, Object> _integrationHeaders(_IntegrationAuth auth) {
-    return {
-      'UserName': auth.userName,
-      'Token': auth.token,
       'Content-Type': 'application/json',
       'Accept': 'text/json',
     };
