@@ -1056,23 +1056,57 @@ LIMIT 1
 
   Future<Map<String, String>> _loadAdmissionParameters(Database db) async {
     final parameters = <String, String>{};
-    if (await _tableExists(db, 'ParametrosAdmisiones_MEN')) {
-      final rows = await db.rawQuery(
-        'SELECT PAM_IdParametro, PAM_ValorParametro FROM ParametrosAdmisiones_MEN',
-      );
-      for (final row in rows) {
-        parameters[_stringValue(row['PAM_IdParametro'])] = _stringValue(
-          row['PAM_ValorParametro'],
+    try {
+      if (await _tableExists(db, 'ParametrosAdmisiones_MEN')) {
+        final admissionColumns = await _columnsFor(
+          db,
+          'ParametrosAdmisiones_MEN',
         );
+        if (admissionColumns.contains('PAM_IdParametro') &&
+            admissionColumns.contains('PAM_ValorParametro')) {
+          final rows = await db.query(
+            'ParametrosAdmisiones_MEN',
+            columns: const ['PAM_IdParametro', 'PAM_ValorParametro'],
+          );
+          for (final row in rows) {
+            parameters[_stringValue(row['PAM_IdParametro'])] = _stringValue(
+              row['PAM_ValorParametro'],
+            );
+          }
+        }
       }
-    }
-    if (await _tableExists(db, 'ParametrosFramework')) {
-      final rows = await db.rawQuery(
-        'SELECT Codigo, Valor FROM ParametrosFramework',
-      );
-      for (final row in rows) {
-        parameters[_stringValue(row['Codigo'])] = _stringValue(row['Valor']);
+      if (await _tableExists(db, 'ParametrosFramework')) {
+        final frameworkColumns = await _columnsFor(db, 'ParametrosFramework');
+        final codeColumn = _firstAvailableColumn(frameworkColumns, const [
+          'PAR_IdParametro',
+          'Codigo',
+          'PAR_Codigo',
+          'Nombre',
+          'PFR_Nombre',
+          'Parametro',
+        ]);
+        final valueColumn = _firstAvailableColumn(frameworkColumns, const [
+          'PAR_ValorParametro',
+          'Valor',
+          'PAR_Valor',
+          'PFR_Valor',
+          'ValorParametro',
+          'Descripcion',
+        ]);
+        if (codeColumn.isNotEmpty && valueColumn.isNotEmpty) {
+          final rows = await db.query(
+            'ParametrosFramework',
+            columns: [codeColumn, valueColumn],
+          );
+          for (final row in rows) {
+            parameters[_stringValue(row[codeColumn])] = _stringValue(
+              row[valueColumn],
+            );
+          }
+        }
       }
+    } on Object {
+      return parameters..removeWhere((key, value) => key.isEmpty);
     }
     return parameters..removeWhere((key, value) => key.isEmpty);
   }
@@ -1186,6 +1220,17 @@ LIMIT 1
   Future<Set<String>> _columnsFor(DatabaseExecutor db, String table) async {
     final rows = await db.rawQuery('PRAGMA table_info(${_identifier(table)})');
     return rows.map((row) => _stringValue(row['name'])).toSet();
+  }
+
+  String _firstAvailableColumn(Set<String> columns, List<String> candidates) {
+    final lowerIndex = {
+      for (final column in columns) column.toLowerCase(): column,
+    };
+    for (final candidate in candidates) {
+      final column = lowerIndex[candidate.toLowerCase()];
+      if (column != null) return column;
+    }
+    return '';
   }
 
   CatalogOption _optionFromRow(
