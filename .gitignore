@@ -43,3 +43,5 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+ios/Runner/Firebase/GoogleService-Info-controller-courier.qa.plist
+ios/Runner/Firebase/GoogleService-Info-controller-user.qa.plist
