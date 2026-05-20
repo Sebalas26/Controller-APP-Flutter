@@ -9,7 +9,7 @@ class ControllerFirebaseMessagingService {
     : _messaging = messaging;
 
   static const FirebaseOptions _iosFirebaseOptions = FirebaseOptions(
-    apiKey: '',
+    apiKey: 'AIzaSyDDfvV9vOlVXizjh-FG6GP9_EwVxyB3eps',
     appId: '1:81189896208:ios:d3b4afda846e8671e44a95',
     messagingSenderId: '81189896208',
     projectId: 'black-circle-365516',
@@ -58,11 +58,20 @@ class ControllerFirebaseMessagingService {
 
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        final token = await messaging.getToken();
-        if (token != null && token.trim().isNotEmpty) return token.trim();
-      } on Object {
-        // Keep the native behavior: retry, then try token regeneration.
-      }
+  final token = await messaging.getToken();
+  if (token != null && token.trim().isNotEmpty) {
+    return token.trim();
+  }
+  } on Exception catch (e, stackTrace) {
+    // Captura excepciones estándar de Firebase/Flutter
+    print('Error específico al obtener el token: $e');
+    print('Rastro del error: $stackTrace');
+    // Aquí puedes registrar el error en Crashlytics o mostrar una alerta
+  } catch (e, stackTrace) {
+    // Captura cualquier otro tipo de objeto/error que no sea una Exception
+    print('Error inesperado: $e');
+    print('Rastro del error: $stackTrace');
+  }
       await Future<void>.delayed(Duration(seconds: attempt + 1));
     }
 
