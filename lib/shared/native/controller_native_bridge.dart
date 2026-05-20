@@ -43,4 +43,14 @@ class ControllerNativeBridge {
       return '';
     }
   }
+
+  Future<String> takePackagePhoto() async {
+    try {
+      return await _channel.invokeMethod<String>('takePackagePhoto') ?? '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
 }

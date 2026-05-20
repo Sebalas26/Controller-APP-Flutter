@@ -10,6 +10,8 @@ class ControllerApiConfig {
     required this.geoDireccionBaseUrl,
     required this.geoRefTokenBaseUrl,
     required this.admisionOfflineBaseUrl,
+    required this.deliveryProofBaseUrl,
+    required this.deliveryProofTokenBaseUrl,
   });
 
   final String label;
@@ -22,4 +24,6 @@ class ControllerApiConfig {
   final String geoDireccionBaseUrl;
   final String geoRefTokenBaseUrl;
   final String admisionOfflineBaseUrl;
+  final String deliveryProofBaseUrl;
+  final String deliveryProofTokenBaseUrl;
 }

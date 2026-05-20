@@ -26,6 +26,8 @@
 	<true/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Se usa la camara para registrar la evidencia del paquete entregado.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
