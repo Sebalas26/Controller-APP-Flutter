@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../shared/network/controller_api_config.dart';
 import '../../login/login.dart';
 import 'controllers/vender_flow_controller.dart';
+import 'views/vender_admission_success_view.dart';
+import 'views/vender_billing_summary_view.dart';
 import 'views/vender_initial_view.dart';
 import 'views/vender_person_view.dart';
 import 'views/vender_payment_view.dart';
@@ -33,6 +35,8 @@ class _VenderPageState extends State<VenderPage> {
     VenderStepItem(Icons.person_outline, 'Remitente'),
     VenderStepItem(Icons.location_on_outlined, 'Destinatario'),
     VenderStepItem(Icons.fact_check_outlined, 'Resumen'),
+    VenderStepItem(Icons.check_circle_outline, 'Admitido'),
+    VenderStepItem(Icons.receipt_long_outlined, 'Facturar'),
     VenderStepItem(Icons.payments_outlined, 'Cobrar'),
   ];
 
@@ -138,6 +142,13 @@ class _VenderPageState extends State<VenderPage> {
           controller: _controller,
           runAction: _runAction,
         );
+      case 5:
+        return VenderAdmissionSuccessView(
+          controller: _controller,
+          runAction: _runAction,
+        );
+      case 6:
+        return VenderBillingSummaryView(controller: _controller);
       default:
         return VenderPaymentView(controller: _controller);
     }
@@ -148,7 +159,10 @@ class _VenderPageState extends State<VenderPage> {
       children: [
         Expanded(
           child: OutlinedButton.icon(
-            onPressed: _controller.currentStep == 0 || _controller.saving
+            onPressed:
+                _controller.currentStep == 0 ||
+                    _controller.currentStep >= 5 ||
+                    _controller.saving
                 ? null
                 : _controller.previousStep,
             icon: const Icon(Icons.arrow_back),
@@ -161,15 +175,7 @@ class _VenderPageState extends State<VenderPage> {
             onPressed: _controller.saving
                 ? null
                 : () => _runAction(_controller.nextStep),
-            icon: Icon(
-              _controller.currentStep == 4
-                  ? Icons.save_outlined
-                  : _controller.currentStep == _steps.length - 1
-                  ? _controller.collectionState?.confirmed == true
-                        ? Icons.add
-                        : Icons.payments_outlined
-                  : Icons.arrow_forward,
-            ),
+            icon: Icon(_footerIcon()),
             label: Text(_footerLabel()),
           ),
         ),
@@ -179,11 +185,25 @@ class _VenderPageState extends State<VenderPage> {
 
   String _footerLabel() {
     if (_controller.currentStep == 4) return 'Guardar admision';
+    if (_controller.currentStep == 5) return 'No agregar mas envios';
+    if (_controller.currentStep == 6) return 'Facturar';
     if (_controller.currentStep == _steps.length - 1) {
       if (_controller.collectionState?.confirmed == true) return 'Nueva venta';
       return _controller.collectionState?.actionLabel ?? 'Confirmar cobro';
     }
     return 'Siguiente';
+  }
+
+  IconData _footerIcon() {
+    if (_controller.currentStep == 4) return Icons.save_outlined;
+    if (_controller.currentStep == 5) return Icons.receipt_long_outlined;
+    if (_controller.currentStep == 6) return Icons.receipt_long;
+    if (_controller.currentStep == _steps.length - 1) {
+      return _controller.collectionState?.confirmed == true
+          ? Icons.add
+          : Icons.payments_outlined;
+    }
+    return Icons.arrow_forward;
   }
 
   Future<void> _runAction(Future<void> Function() action) async {

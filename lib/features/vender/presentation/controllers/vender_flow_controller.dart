@@ -100,6 +100,7 @@ class VenderFlowController extends ChangeNotifier {
   bool recipientNotification = true;
   String? statusMessage;
   String? errorMessage;
+  VenderAdmissionSuccessState? admissionSuccessState;
   VenderCollectionState? collectionState;
 
   double get finalWeight {
@@ -146,12 +147,14 @@ class VenderFlowController extends ChangeNotifier {
 
   void setStep(int value) {
     if (value > highestStep) return;
+    if (highestStep >= 5 && value < 5) return;
     currentStep = value;
     notifyListeners();
   }
 
   void previousStep() {
     if (currentStep <= 0) return;
+    if (currentStep >= 5) return;
     currentStep -= 1;
     notifyListeners();
   }
@@ -177,6 +180,12 @@ class VenderFlowController extends ChangeNotifier {
         return;
       case 4:
         await saveDraft(reserveSupply: true);
+        return;
+      case 5:
+        goToBillingSummary();
+        return;
+      case 6:
+        await invoiceAdmittedGuides();
         return;
       default:
         if (collectionState?.confirmed == true) {
@@ -368,10 +377,10 @@ class VenderFlowController extends ChangeNotifier {
           'Pendientes: ${failedGuides.take(3).join(', ')}.',
         );
       }
-      _openCollection(
+      _openBillingSummary(
         collectionGuides,
         message:
-            'Sincronizacion exitosa de $synchronized admisiones. Continua con el cobro.',
+            'Sincronizacion exitosa de $synchronized admisiones. Verifica el resumen para facturar.',
       );
     });
   }
@@ -402,20 +411,19 @@ class VenderFlowController extends ChangeNotifier {
         );
         var finalMessage =
             'Admision guardada localmente (${result.status}) con guia ${result.guideNumber}.';
-        VenderCollectionGuide? collectionGuide;
+        VenderAdmissionSuccessState? successState;
         if (reserveSupply && !offline) {
-          collectionGuide = await _trySynchronizeSavedAdmission(
-            result.guideNumber,
-          );
-          finalMessage = collectionGuide != null
-              ? 'Admision registrada y sincronizada con guia ${result.guideNumber}.'
-              : 'Admision guardada offline con guia ${result.guideNumber}; queda pendiente para sincronizar.';
+          successState = await _synchronizeSavedAdmission(result.guideNumber);
+          finalMessage = successState.message.trim().isNotEmpty
+              ? successState.message
+              : 'Admision registrada y sincronizada con guia ${result.guideNumber}.';
         }
         catalogs = await localRepository.loadCatalogs(appInformation);
-        if (collectionGuide != null) {
-          _openCollection([
-            collectionGuide,
-          ], message: '$finalMessage Continua con el cobro.');
+        if (successState != null) {
+          _openAdmissionSuccess(
+            successState,
+            message: '$finalMessage Envio admitido con exito.',
+          );
         } else {
           statusMessage = finalMessage;
         }
@@ -426,27 +434,32 @@ class VenderFlowController extends ChangeNotifier {
     }
   }
 
-  Future<VenderCollectionGuide?> _trySynchronizeSavedAdmission(
+  Future<VenderAdmissionSuccessState> _synchronizeSavedAdmission(
     String guideNumber,
   ) async {
     final admission = await localRepository.pendingOfflineAdmissionByGuide(
       guideNumber,
     );
-    if (admission == null) return null;
-    try {
-      final syncResult = await remoteRepository.synchronizeOfflineAdmission(
-        config: apiConfig,
-        appInformation: appInformation,
-        admission: admission,
+    if (admission == null) {
+      throw VenderLocalException(
+        'No se encontro la admision local para la guia $guideNumber.',
       );
-      await localRepository.markOfflineAdmissionSynchronized(admission);
-      return VenderCollectionGuide.fromOfflineAdmission(
-        admission: admission,
-        syncResult: syncResult,
-      );
-    } on Object {
-      return null;
     }
+    final syncResult = await remoteRepository.synchronizeOfflineAdmission(
+      config: apiConfig,
+      appInformation: appInformation,
+      admission: admission,
+    );
+    await localRepository.markOfflineAdmissionSynchronized(admission);
+    final collectionGuide = VenderCollectionGuide.fromOfflineAdmission(
+      admission: admission,
+      syncResult: syncResult,
+    );
+    return VenderAdmissionSuccessState(
+      guide: collectionGuide,
+      supplyNumber: admission.guideNumber,
+      message: syncResult.message,
+    );
   }
 
   void selectCollectionPaymentMethod(int value) {
@@ -470,6 +483,39 @@ class VenderFlowController extends ChangeNotifier {
           : collection.selectedPaymentMethodId == VenderPaymentMethods.cash
           ? 'Cobro en efectivo confirmado por $amount.'
           : 'Cobro $methodName listo para continuar por $amount.';
+    });
+  }
+
+  void goToBillingSummary() {
+    final collection = collectionState;
+    if (collection == null || collection.guides.isEmpty) {
+      throw const VenderLocalException('No hay guias admitidas para facturar.');
+    }
+    statusMessage = 'Resumen de guias admitidas listo para facturar.';
+    _advanceTo(6);
+  }
+
+  Future<void> invoiceAdmittedGuides() async {
+    await _remoteGuard(() async {
+      final collection = collectionState;
+      if (collection == null || collection.guides.isEmpty) {
+        throw const VenderLocalException(
+          'No hay guias admitidas para facturar.',
+        );
+      }
+      final result = await remoteRepository.executePickup(
+        config: apiConfig,
+        appInformation: appInformation,
+        collection: collection,
+      );
+      collectionState = collection.copyWith(
+        confirmed: true,
+        pickupExecuted: true,
+        pickupMessage: result.message,
+        invoiceNumber: result.invoiceNumber,
+      );
+      statusMessage = result.message;
+      _advanceTo(7);
     });
   }
 
@@ -704,7 +750,21 @@ class VenderFlowController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _openCollection(
+  void _openAdmissionSuccess(
+    VenderAdmissionSuccessState state, {
+    required String message,
+  }) {
+    admissionSuccessState = VenderAdmissionSuccessState(
+      guide: state.guide,
+      supplyNumber: state.supplyNumber,
+      message: message,
+    );
+    _openCollectionState([state.guide]);
+    statusMessage = message;
+    _advanceTo(5);
+  }
+
+  void _openBillingSummary(
     List<VenderCollectionGuide> guides, {
     required String message,
   }) {
@@ -712,21 +772,24 @@ class VenderFlowController extends ChangeNotifier {
       statusMessage = message;
       return;
     }
-    collectionState = VenderCollectionState(
-      guides: guides,
-      selectedPaymentMethodId: _defaultCollectionPaymentMethod(guides),
-    );
+    admissionSuccessState = null;
+    _openCollectionState(guides);
     statusMessage = message;
-    _advanceTo(5);
+    _advanceTo(6);
   }
 
-  int _defaultCollectionPaymentMethod(List<VenderCollectionGuide> guides) {
-    for (final guide in guides) {
-      if (VenderPaymentMethods.chargeable.contains(guide.paymentMethodId)) {
-        return guide.paymentMethodId;
-      }
-    }
-    return VenderPaymentMethods.cash;
+  void _openCollectionState(List<VenderCollectionGuide> guides) {
+    final previous = collectionState?.guides ?? const <VenderCollectionGuide>[];
+    final merged = <VenderCollectionGuide>[
+      ...previous.where(
+        (guide) => !guides.any((item) => item.guideNumber == guide.guideNumber),
+      ),
+      ...guides,
+    ];
+    collectionState = VenderCollectionState(
+      guides: merged,
+      selectedPaymentMethodId: VenderPaymentMethods.cash,
+    );
   }
 
   void _clearForm() {
@@ -795,6 +858,7 @@ class VenderFlowController extends ChangeNotifier {
     recipientSouth = false;
     senderNotification = true;
     recipientNotification = true;
+    admissionSuccessState = null;
     collectionState = null;
     errorMessage = null;
     statusMessage = null;

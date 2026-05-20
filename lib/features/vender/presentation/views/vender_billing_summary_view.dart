@@ -4,42 +4,35 @@ import '../../models/vender_models.dart';
 import '../controllers/vender_flow_controller.dart';
 import '../widgets/vender_form_widgets.dart';
 
-class VenderPaymentView extends StatelessWidget {
-  const VenderPaymentView({super.key, required this.controller});
+class VenderBillingSummaryView extends StatelessWidget {
+  const VenderBillingSummaryView({super.key, required this.controller});
 
   final VenderFlowController controller;
 
   @override
   Widget build(BuildContext context) {
     final collection = controller.collectionState;
-    if (collection == null) {
+    if (collection == null || collection.guides.isEmpty) {
       return const VenderEmptyState(
-        icon: Icons.payments_outlined,
-        title: 'Sin cobro pendiente',
-        message: 'No hay guias sincronizadas listas para cobrar.',
+        icon: Icons.receipt_long_outlined,
+        title: 'Sin guias admitidas',
+        message: 'No hay guias listas para facturar.',
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        VenderSectionTitle(
-          icon: Icons.payments_outlined,
-          title: 'Cobrar venta',
-          subtitle: collection.confirmed
-              ? 'Cobro finalizado'
-              : 'Guias sincronizadas listas para recaudo',
+        const VenderSectionTitle(
+          icon: Icons.receipt_long_outlined,
+          title: 'Resumen venta',
+          subtitle: 'Verifica las guias admitidas antes de facturar',
         ),
         const SizedBox(height: 16),
         _TotalsBlock(collection: collection),
-        if (!collection.confirmed) ...[
-          const SizedBox(height: 16),
-          _PaymentMethodSelector(
-            collection: collection,
-            onSelected: controller.selectCollectionPaymentMethod,
-          ),
-        ],
         const SizedBox(height: 16),
-        ...collection.guides.map((guide) => _GuideChargeTile(guide: guide)),
+        _PaymentBlock(collection: collection),
+        const SizedBox(height: 16),
+        ...collection.guides.map((guide) => _GuideSummaryTile(guide: guide)),
       ],
     );
   }
@@ -62,18 +55,21 @@ class _TotalsBlock extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Column(
           children: [
-            _SummaryLine('Guias admitidas', collection.guideCount.toString()),
+            _SummaryLine('Total envios', collection.guideCount.toString()),
+            _SummaryLine('Contado', collection.cashGuideCount.toString()),
+            _SummaryLine('Credito', collection.creditGuideCount.toString()),
+            _SummaryLine('Al cobro', collection.collectGuideCount.toString()),
             _SummaryLine(
               'Prefactura',
               collection.idPreInvoice <= 0
                   ? '-'
                   : collection.idPreInvoice.toString(),
             ),
-            if (collection.invoiceNumber.trim().isNotEmpty)
-              _SummaryLine('Factura', collection.invoiceNumber),
-            if (collection.pickupMessage.trim().isNotEmpty)
-              _SummaryLine('Mensaje', collection.pickupMessage),
-            _SummaryLine('Valor guias', _money(collection.totalGuidesValue)),
+            const Divider(height: 24),
+            _SummaryLine(
+              'Valor guia contado',
+              _money(collection.totalGuidesValue),
+            ),
             _SummaryLine('Valor recogida', _money(collection.pickupValue)),
             _SummaryLine('Empaques', _money(collection.packageValue)),
             const Divider(height: 24),
@@ -89,14 +85,10 @@ class _TotalsBlock extends StatelessWidget {
   }
 }
 
-class _PaymentMethodSelector extends StatelessWidget {
-  const _PaymentMethodSelector({
-    required this.collection,
-    required this.onSelected,
-  });
+class _PaymentBlock extends StatelessWidget {
+  const _PaymentBlock({required this.collection});
 
   final VenderCollectionState collection;
-  final ValueChanged<int> onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -104,29 +96,40 @@ class _PaymentMethodSelector extends StatelessWidget {
       spacing: 10,
       runSpacing: 10,
       children: [
-        for (final method in VenderPaymentMethods.chargeable)
-          ChoiceChip(
-            label: Text(VenderPaymentMethods.nameFor(method)),
-            selected: collection.selectedPaymentMethodId == method,
-            onSelected: collection.confirmed ? null : (_) => onSelected(method),
-            avatar: Icon(_iconFor(method), size: 18),
-          ),
+        Chip(
+          label: Text(collection.selectedPaymentMethodName),
+          avatar: const Icon(Icons.payments_outlined, size: 18),
+        ),
+        const _UnavailableChip(icon: Icons.phone_android, label: 'Nequi'),
+        const _UnavailableChip(icon: Icons.link, label: 'Link de pago'),
+        const _UnavailableChip(
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'Inter Pay',
+        ),
       ],
     );
   }
+}
 
-  IconData _iconFor(int method) {
-    return switch (method) {
-      VenderPaymentMethods.nequi => Icons.phone_android,
-      VenderPaymentMethods.linkPayment => Icons.link,
-      VenderPaymentMethods.interPay => Icons.account_balance_wallet_outlined,
-      _ => Icons.payments_outlined,
-    };
+class _UnavailableChip extends StatelessWidget {
+  const _UnavailableChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      avatar: Icon(icon, size: 18, color: const Color(0xFF696F79)),
+      label: Text('$label no disponible'),
+      backgroundColor: const Color(0xFFF4F5F7),
+      side: const BorderSide(color: Color(0xFFE1E6EF)),
+    );
   }
 }
 
-class _GuideChargeTile extends StatelessWidget {
-  const _GuideChargeTile({required this.guide});
+class _GuideSummaryTile extends StatelessWidget {
+  const _GuideSummaryTile({required this.guide});
 
   final VenderCollectionGuide guide;
 
@@ -193,7 +196,7 @@ class _SummaryLine extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 132,
+            width: 138,
             child: Text(
               label,
               style: TextStyle(

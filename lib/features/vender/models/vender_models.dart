@@ -403,12 +403,14 @@ class VenderAdmissionSyncResult {
     required this.guideNumber,
     required this.idPickup,
     required this.idPreInvoice,
+    this.message = '',
     this.raw = const <String, Object?>{},
   });
 
   final String guideNumber;
   final int idPickup;
   final int idPreInvoice;
+  final String message;
   final Map<String, Object?> raw;
 
   factory VenderAdmissionSyncResult.fromResponse(
@@ -433,9 +435,27 @@ class VenderAdmissionSyncResult {
           : fallbackGuideNumber,
       idPickup: _deepInt(json, const ['IdRecogida', 'idRecogida']),
       idPreInvoice: _deepInt(json, const ['IdPreFactura', 'idPreFactura']),
+      message: _deepString(json, const [
+        'Mensaje',
+        'mensaje',
+        'Message',
+        'message',
+      ]),
       raw: json,
     );
   }
+}
+
+class VenderAdmissionSuccessState {
+  const VenderAdmissionSuccessState({
+    required this.guide,
+    required this.supplyNumber,
+    required this.message,
+  });
+
+  final VenderCollectionGuide guide;
+  final String supplyNumber;
+  final String message;
 }
 
 class VenderCollectionGuide {
@@ -586,11 +606,17 @@ class VenderCollectionState {
     required this.guides,
     required this.selectedPaymentMethodId,
     this.confirmed = false,
+    this.pickupExecuted = false,
+    this.pickupMessage = '',
+    this.invoiceNumber = '',
   });
 
   final List<VenderCollectionGuide> guides;
   final int selectedPaymentMethodId;
   final bool confirmed;
+  final bool pickupExecuted;
+  final String pickupMessage;
+  final String invoiceNumber;
 
   int get guideCount => guides.length;
 
@@ -620,6 +646,15 @@ class VenderCollectionState {
 
   double get totalToCharge => totalGuidesValue + pickupValue + packageValue;
 
+  int get cashGuideCount => _countPaymentMethod(VenderPaymentMethods.cash);
+
+  int get creditGuideCount => _countPaymentMethod(VenderPaymentMethods.credit);
+
+  int get collectGuideCount => guides.where((guide) {
+    return guide.isCollectPayment ||
+        guide.paymentMethodId == VenderPaymentMethods.collect;
+  }).length;
+
   String get selectedPaymentMethodName {
     return VenderPaymentMethods.nameFor(selectedPaymentMethodId);
   }
@@ -634,14 +669,67 @@ class VenderCollectionState {
   }
 
   VenderCollectionState copyWith({
+    List<VenderCollectionGuide>? guides,
     int? selectedPaymentMethodId,
     bool? confirmed,
+    bool? pickupExecuted,
+    String? pickupMessage,
+    String? invoiceNumber,
   }) {
     return VenderCollectionState(
-      guides: guides,
+      guides: guides ?? this.guides,
       selectedPaymentMethodId:
           selectedPaymentMethodId ?? this.selectedPaymentMethodId,
       confirmed: confirmed ?? this.confirmed,
+      pickupExecuted: pickupExecuted ?? this.pickupExecuted,
+      pickupMessage: pickupMessage ?? this.pickupMessage,
+      invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+    );
+  }
+
+  int _countPaymentMethod(int id) {
+    return guides.where((guide) => guide.paymentMethodId == id).length;
+  }
+}
+
+class VenderPickupExecutionResult {
+  const VenderPickupExecutionResult({
+    required this.invoiceNumber,
+    required this.message,
+    this.raw = const <String, Object?>{},
+  });
+
+  final String invoiceNumber;
+  final String message;
+  final Map<String, Object?> raw;
+
+  factory VenderPickupExecutionResult.fromResponse(Object? data) {
+    final rawText = data?.toString().trim() ?? '';
+    final json = data is Map<String, dynamic>
+        ? data
+        : data is Map
+        ? Map<String, dynamic>.from(data)
+        : data is String && data.trim().startsWith('{')
+        ? _decodeJsonMap(data)
+        : const <String, dynamic>{};
+    final invoice = _coalesceText([
+      _deepString(json, const [
+        'NumeroFactura',
+        'numeroFactura',
+        'Factura',
+        'factura',
+        'data',
+      ]),
+      rawText,
+    ]);
+    final message = _coalesceText([
+      _deepString(json, const ['Mensaje', 'mensaje', 'Message', 'message']),
+      'La recogida fue cerrada de forma exitosa.',
+    ]);
+    return VenderPickupExecutionResult(
+      invoiceNumber: invoice,
+      message: message,
+      raw: json,
     );
   }
 }

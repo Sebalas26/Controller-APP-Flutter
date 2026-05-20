@@ -223,6 +223,46 @@ class VenderRemoteRepository {
     );
   }
 
+  Future<VenderPickupExecutionResult> executePickup({
+    required ControllerApiConfig config,
+    required AppInformation appInformation,
+    required VenderCollectionState collection,
+  }) async {
+    if (collection.idPickup <= 0) {
+      throw const VenderRemoteException(
+        'La recogida no tiene id remoto para facturar.',
+      );
+    }
+    if (collection.idPreInvoice <= 0) {
+      throw const VenderRemoteException(
+        'La recogida no tiene prefactura remota para facturar.',
+      );
+    }
+    final idKey = await _idKeyProvider.createIdKey(config);
+    final client = _httpClient.client(
+      config.controllerBaseUrl,
+      headerSource: appInformation,
+      idKey: idKey,
+    );
+    final response = await client.post<dynamic>(
+      'Recogidas/EjecutarRecogida',
+      data: _executePickupBody(
+        appInformation: appInformation,
+        collection: collection,
+      ),
+      options: Options(
+        validateStatus: (status) => status != null && status < 600,
+      ),
+    );
+    final statusCode = response.statusCode ?? 0;
+    if (statusCode >= 200 && statusCode < 300 && response.data != null) {
+      return VenderPickupExecutionResult.fromResponse(response.data);
+    }
+    throw VenderRemoteException(
+      'No fue posible ejecutar la recogida. Codigo HTTP $statusCode.',
+    );
+  }
+
   Future<void> _markSupplyUsed({
     required ControllerApiConfig config,
     required _IntegrationAuth auth,
@@ -397,6 +437,51 @@ class VenderRemoteRepository {
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
     return null;
+  }
+
+  Map<String, Object?> _executePickupBody({
+    required AppInformation appInformation,
+    required VenderCollectionState collection,
+  }) {
+    return _withoutNullValues({
+      'recogida': _withoutNullValues({
+        'IdSolicitudRecogida': collection.idPickup,
+        'NumeroPiezas': 0,
+        'LocalidadCambio': appInformation.idCiudad,
+        'IdCiudad': appInformation.idCiudad,
+        'Longitud': '',
+        'Latitud': '',
+        'IdMotivo': 0,
+        'DescripcionMotivo': '',
+        'DocPersonaResponsable': appInformation.identificacionUsuario,
+        'PlacaVehiculo': '',
+        'TieneCodigoQR': false,
+        'TipoRecogida': 2,
+        'IdAplicacion': 9,
+        'Mensajero': {'idMensajer': appInformation.idMensajero},
+        'ValorTotalRecogida': collection.totalToCharge,
+        'ValorRecogida': collection.pickupValue,
+        'ValorPropina': 0,
+        'IdPreFactura': collection.idPreInvoice,
+      }),
+      'idSistema': 0,
+      'tipoNovedad': 0,
+      'idPreFactura': collection.idPreInvoice,
+    });
+  }
+
+  Map<String, Object?> _withoutNullValues(Map<String, Object?> source) {
+    final result = <String, Object?>{};
+    for (final entry in source.entries) {
+      final value = entry.value;
+      if (value == null) continue;
+      if (value is Map<String, Object?>) {
+        result[entry.key] = _withoutNullValues(value);
+      } else {
+        result[entry.key] = value;
+      }
+    }
+    return result;
   }
 
   String _findString(Map<String, dynamic> json, List<String> keys) {
