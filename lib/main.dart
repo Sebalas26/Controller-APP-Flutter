@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'features/login/login.dart';
+import 'features/entregas/entregas.dart';
 import 'features/vender/vender.dart';
 import 'shared/firebase/controller_firebase_messaging_service.dart';
 import 'shared/native/controller_native_bridge.dart';
@@ -154,6 +155,8 @@ class EnvironmentConfig {
   String get serviciosInter => urls[5];
   String get preenvio => urls[6];
   String get georreferenciacion => urls[9];
+  String get pruebaEntregaAws => urls[10];
+  String get pruebaEntregaToken => urls[11];
   String get productos => urls[12];
   String get mediosPagoLegacy => urls[13];
   String get loginIntegracion => urls[14];
@@ -219,6 +222,8 @@ class EnvironmentConfig {
       geoDireccionBaseUrl: geoDireccion,
       geoRefTokenBaseUrl: geoRefToken,
       admisionOfflineBaseUrl: admisionOffline,
+      deliveryProofBaseUrl: pruebaEntregaAws,
+      deliveryProofTokenBaseUrl: pruebaEntregaToken,
     );
   }
 
@@ -1308,7 +1313,11 @@ class ModulePage extends StatelessWidget {
           offline: session.offline,
         );
       case 'entregar':
-        return const DeliveryBody();
+        return EntregasPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        );
       case 'recoger':
         return const PickupBody();
       case 'asignar':
