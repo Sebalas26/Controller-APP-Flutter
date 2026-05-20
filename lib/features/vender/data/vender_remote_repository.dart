@@ -181,7 +181,7 @@ class VenderRemoteRepository {
     return supplies;
   }
 
-  Future<void> synchronizeOfflineAdmission({
+  Future<VenderAdmissionSyncResult> synchronizeOfflineAdmission({
     required ControllerApiConfig config,
     required AppInformation appInformation,
     required VenderOfflineAdmissionRecord admission,
@@ -207,7 +207,12 @@ class VenderRemoteRepository {
       ),
     );
     final statusCode = response.statusCode ?? 0;
-    if (statusCode >= 200 && statusCode < 300 && response.data != null) return;
+    if (statusCode >= 200 && statusCode < 300) {
+      return VenderAdmissionSyncResult.fromResponse(
+        response.data,
+        fallbackGuideNumber: admission.guideNumber,
+      );
+    }
     if (statusCode == 409 || statusCode == 412) {
       throw VenderRemoteException(
         'La guia ${admission.guideNumber} esta duplicada en la base remota.',

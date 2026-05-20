@@ -100,6 +100,7 @@ class VenderFlowController extends ChangeNotifier {
   bool recipientNotification = true;
   String? statusMessage;
   String? errorMessage;
+  VenderCollectionState? collectionState;
 
   double get finalWeight {
     return math.max(
@@ -174,8 +175,15 @@ class VenderFlowController extends ChangeNotifier {
         _validatePerson(VenderPersonKind.recipient);
         _advanceTo(4);
         return;
-      default:
+      case 4:
         await saveDraft(reserveSupply: true);
+        return;
+      default:
+        if (collectionState?.confirmed == true) {
+          await resetForNewAdmission();
+        } else {
+          await confirmCollection();
+        }
     }
   }
 
@@ -333,12 +341,19 @@ class VenderFlowController extends ChangeNotifier {
       }
       var synchronized = 0;
       final failedGuides = <String>[];
+      final collectionGuides = <VenderCollectionGuide>[];
       for (final admission in admissions) {
         try {
-          await remoteRepository.synchronizeOfflineAdmission(
+          final syncResult = await remoteRepository.synchronizeOfflineAdmission(
             config: apiConfig,
             appInformation: appInformation,
             admission: admission,
+          );
+          collectionGuides.add(
+            VenderCollectionGuide.fromOfflineAdmission(
+              admission: admission,
+              syncResult: syncResult,
+            ),
           );
           await localRepository.markOfflineAdmissionSynchronized(admission);
           synchronized += 1;
@@ -353,7 +368,11 @@ class VenderFlowController extends ChangeNotifier {
           'Pendientes: ${failedGuides.take(3).join(', ')}.',
         );
       }
-      statusMessage = 'Sincronizacion exitosa de $synchronized admisiones.';
+      _openCollection(
+        collectionGuides,
+        message:
+            'Sincronizacion exitosa de $synchronized admisiones. Continua con el cobro.',
+      );
     });
   }
 
@@ -383,16 +402,23 @@ class VenderFlowController extends ChangeNotifier {
         );
         var finalMessage =
             'Admision guardada localmente (${result.status}) con guia ${result.guideNumber}.';
+        VenderCollectionGuide? collectionGuide;
         if (reserveSupply && !offline) {
-          final synchronized = await _trySynchronizeSavedAdmission(
+          collectionGuide = await _trySynchronizeSavedAdmission(
             result.guideNumber,
           );
-          finalMessage = synchronized
+          finalMessage = collectionGuide != null
               ? 'Admision registrada y sincronizada con guia ${result.guideNumber}.'
               : 'Admision guardada offline con guia ${result.guideNumber}; queda pendiente para sincronizar.';
         }
         catalogs = await localRepository.loadCatalogs(appInformation);
-        statusMessage = finalMessage;
+        if (collectionGuide != null) {
+          _openCollection([
+            collectionGuide,
+          ], message: '$finalMessage Continua con el cobro.');
+        } else {
+          statusMessage = finalMessage;
+        }
       });
     } finally {
       saving = false;
@@ -400,22 +426,56 @@ class VenderFlowController extends ChangeNotifier {
     }
   }
 
-  Future<bool> _trySynchronizeSavedAdmission(String guideNumber) async {
+  Future<VenderCollectionGuide?> _trySynchronizeSavedAdmission(
+    String guideNumber,
+  ) async {
     final admission = await localRepository.pendingOfflineAdmissionByGuide(
       guideNumber,
     );
-    if (admission == null) return false;
+    if (admission == null) return null;
     try {
-      await remoteRepository.synchronizeOfflineAdmission(
+      final syncResult = await remoteRepository.synchronizeOfflineAdmission(
         config: apiConfig,
         appInformation: appInformation,
         admission: admission,
       );
       await localRepository.markOfflineAdmissionSynchronized(admission);
-      return true;
+      return VenderCollectionGuide.fromOfflineAdmission(
+        admission: admission,
+        syncResult: syncResult,
+      );
     } on Object {
-      return false;
+      return null;
     }
+  }
+
+  void selectCollectionPaymentMethod(int value) {
+    final collection = collectionState;
+    if (collection == null) return;
+    collectionState = collection.copyWith(selectedPaymentMethodId: value);
+    notifyListeners();
+  }
+
+  Future<void> confirmCollection() async {
+    await _guard(() async {
+      final collection = collectionState;
+      if (collection == null) {
+        throw const VenderLocalException('No hay cobro pendiente.');
+      }
+      collectionState = collection.copyWith(confirmed: true);
+      final methodName = collection.selectedPaymentMethodName;
+      final amount = _money(collection.totalToCharge);
+      statusMessage = collection.totalToCharge <= 0
+          ? 'Admision sincronizada sin valor contado por cobrar.'
+          : collection.selectedPaymentMethodId == VenderPaymentMethods.cash
+          ? 'Cobro en efectivo confirmado por $amount.'
+          : 'Cobro $methodName listo para continuar por $amount.';
+    });
+  }
+
+  Future<void> resetForNewAdmission() async {
+    _clearForm();
+    await initialize();
   }
 
   void calculateVolumeWeight() {
@@ -642,6 +702,102 @@ class VenderFlowController extends ChangeNotifier {
     currentStep = step;
     highestStep = math.max(highestStep, step);
     notifyListeners();
+  }
+
+  void _openCollection(
+    List<VenderCollectionGuide> guides, {
+    required String message,
+  }) {
+    if (guides.isEmpty) {
+      statusMessage = message;
+      return;
+    }
+    collectionState = VenderCollectionState(
+      guides: guides,
+      selectedPaymentMethodId: _defaultCollectionPaymentMethod(guides),
+    );
+    statusMessage = message;
+    _advanceTo(5);
+  }
+
+  int _defaultCollectionPaymentMethod(List<VenderCollectionGuide> guides) {
+    for (final guide in guides) {
+      if (VenderPaymentMethods.chargeable.contains(guide.paymentMethodId)) {
+        return guide.paymentMethodId;
+      }
+    }
+    return VenderPaymentMethods.cash;
+  }
+
+  void _clearForm() {
+    for (final controller in [
+      preGuide,
+      weightScale,
+      weightVolume,
+      length,
+      width,
+      height,
+      declaredValue,
+      securityBag,
+      content,
+      observations,
+      senderDocument,
+      senderPhone,
+      senderName,
+      senderFirstLastName,
+      senderSecondLastName,
+      senderStreet,
+      senderNumber,
+      senderComplement,
+      senderNeighborhood,
+      senderAddress,
+      senderEmail,
+      recipientDocument,
+      recipientPhone,
+      recipientName,
+      recipientFirstLastName,
+      recipientSecondLastName,
+      recipientStreet,
+      recipientNumber,
+      recipientComplement,
+      recipientNeighborhood,
+      recipientAddress,
+      recipientEmail,
+    ]) {
+      controller.clear();
+    }
+    pieces.text = '1';
+    deliveryTypes = const [];
+    shippingTypes = const [];
+    serviceQuotes = const [];
+    valueRange = const VenderValueRange(minimum: 0, maximum: 0);
+    destinationCity = null;
+    deliveryType = null;
+    paymentMethod = null;
+    shippingType = null;
+    selectedQuote = null;
+    senderIdentificationType = null;
+    senderAddressType = null;
+    senderPropertyType = null;
+    recipientIdentificationType = null;
+    recipientAddressType = null;
+    recipientPropertyType = null;
+    selectedPackage = null;
+    senderGeoAddress = null;
+    recipientGeoAddress = null;
+    preenvioData = null;
+    guideData = null;
+    currentStep = 0;
+    highestStep = 0;
+    paymentAtHome = false;
+    contentChecked = false;
+    senderSouth = false;
+    recipientSouth = false;
+    senderNotification = true;
+    recipientNotification = true;
+    collectionState = null;
+    errorMessage = null;
+    statusMessage = null;
   }
 
   Future<void> _guard(Future<void> Function() action) async {

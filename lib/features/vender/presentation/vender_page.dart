@@ -5,6 +5,7 @@ import '../../login/login.dart';
 import 'controllers/vender_flow_controller.dart';
 import 'views/vender_initial_view.dart';
 import 'views/vender_person_view.dart';
+import 'views/vender_payment_view.dart';
 import 'views/vender_settlement_view.dart';
 import 'views/vender_summary_view.dart';
 import 'widgets/vender_form_widgets.dart';
@@ -32,6 +33,7 @@ class _VenderPageState extends State<VenderPage> {
     VenderStepItem(Icons.person_outline, 'Remitente'),
     VenderStepItem(Icons.location_on_outlined, 'Destinatario'),
     VenderStepItem(Icons.fact_check_outlined, 'Resumen'),
+    VenderStepItem(Icons.payments_outlined, 'Cobrar'),
   ];
 
   late final VenderFlowController _controller;
@@ -131,11 +133,13 @@ class _VenderPageState extends State<VenderPage> {
           kind: VenderPersonKind.recipient,
           runAction: _runAction,
         );
-      default:
+      case 4:
         return VenderSummaryView(
           controller: _controller,
           runAction: _runAction,
         );
+      default:
+        return VenderPaymentView(controller: _controller);
     }
   }
 
@@ -158,19 +162,28 @@ class _VenderPageState extends State<VenderPage> {
                 ? null
                 : () => _runAction(_controller.nextStep),
             icon: Icon(
-              _controller.currentStep == _steps.length - 1
+              _controller.currentStep == 4
                   ? Icons.save_outlined
+                  : _controller.currentStep == _steps.length - 1
+                  ? _controller.collectionState?.confirmed == true
+                        ? Icons.add
+                        : Icons.payments_outlined
                   : Icons.arrow_forward,
             ),
-            label: Text(
-              _controller.currentStep == _steps.length - 1
-                  ? 'Guardar offline'
-                  : 'Siguiente',
-            ),
+            label: Text(_footerLabel()),
           ),
         ),
       ],
     );
+  }
+
+  String _footerLabel() {
+    if (_controller.currentStep == 4) return 'Guardar admision';
+    if (_controller.currentStep == _steps.length - 1) {
+      if (_controller.collectionState?.confirmed == true) return 'Nueva venta';
+      return _controller.collectionState?.actionLabel ?? 'Confirmar cobro';
+    }
+    return 'Siguiente';
   }
 
   Future<void> _runAction(Future<void> Function() action) async {

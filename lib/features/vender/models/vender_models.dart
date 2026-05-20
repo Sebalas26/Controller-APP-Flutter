@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class CatalogOption {
   const CatalogOption({
     required this.id,
@@ -396,6 +398,279 @@ class VenderOfflineAdmissionRecord {
   }
 }
 
+class VenderAdmissionSyncResult {
+  const VenderAdmissionSyncResult({
+    required this.guideNumber,
+    required this.idPickup,
+    required this.idPreInvoice,
+    this.raw = const <String, Object?>{},
+  });
+
+  final String guideNumber;
+  final int idPickup;
+  final int idPreInvoice;
+  final Map<String, Object?> raw;
+
+  factory VenderAdmissionSyncResult.fromResponse(
+    Object? data, {
+    required String fallbackGuideNumber,
+  }) {
+    final json = data is Map<String, dynamic>
+        ? data
+        : data is Map
+        ? Map<String, dynamic>.from(data)
+        : data is String && data.trim().isNotEmpty
+        ? _decodeJsonMap(data)
+        : const <String, dynamic>{};
+    return VenderAdmissionSyncResult(
+      guideNumber:
+          _deepString(json, const [
+            'NumeroGuia',
+            'numeroGuia',
+            'guia',
+          ]).trim().isNotEmpty
+          ? _deepString(json, const ['NumeroGuia', 'numeroGuia', 'guia'])
+          : fallbackGuideNumber,
+      idPickup: _deepInt(json, const ['IdRecogida', 'idRecogida']),
+      idPreInvoice: _deepInt(json, const ['IdPreFactura', 'idPreFactura']),
+      raw: json,
+    );
+  }
+}
+
+class VenderCollectionGuide {
+  const VenderCollectionGuide({
+    required this.guideNumber,
+    required this.paymentMethodId,
+    required this.paymentMethodLabel,
+    required this.isCollectPayment,
+    required this.totalValue,
+    required this.transportValue,
+    required this.insuranceValue,
+    required this.senderName,
+    required this.senderDocument,
+    required this.senderPhone,
+    required this.senderEmail,
+    required this.recipientName,
+    required this.idPickup,
+    required this.idPreInvoice,
+  });
+
+  final String guideNumber;
+  final int paymentMethodId;
+  final String paymentMethodLabel;
+  final bool isCollectPayment;
+  final double totalValue;
+  final double transportValue;
+  final double insuranceValue;
+  final String senderName;
+  final String senderDocument;
+  final String senderPhone;
+  final String senderEmail;
+  final String recipientName;
+  final int idPickup;
+  final int idPreInvoice;
+
+  bool get shouldChargeNow {
+    return !isCollectPayment &&
+        paymentMethodId != VenderPaymentMethods.credit &&
+        totalValue > 0;
+  }
+
+  factory VenderCollectionGuide.fromOfflineAdmission({
+    required VenderOfflineAdmissionRecord admission,
+    required VenderAdmissionSyncResult syncResult,
+  }) {
+    final request = _decodeJsonMap(admission.requestJson);
+    final printPayload = _decodeJsonMap(admission.printJson);
+    final guide = _readMap(request, const ['Guia', 'guia']);
+    final admissionPreenvio = _readMap(request, const [
+      'admisionPreenvio',
+      'AdmisionPreenvio',
+    ]);
+    final forms = _readList(guide, const ['FormasPago', 'formasPago']);
+    final firstForm = forms.isEmpty ? const <String, dynamic>{} : forms.first;
+    final sender = _readMap(
+      _readMap(request, const ['RemitenteDestinatario']),
+      const ['PeatonRemitente', 'peatonRemitente'],
+    );
+    final recipient = _readMap(
+      _readMap(request, const ['RemitenteDestinatario']),
+      const ['PeatonDestinatario', 'peatonDestinatario'],
+    );
+    final paymentMethodId =
+        _readInt(admissionPreenvio, const ['idFormaPago', 'IdFormaPago']) ??
+        _readInt(firstForm, const ['IdFormaPago', 'idFormaPago']) ??
+        _readInt(guide, const ['IdFormaPago', 'idFormaPago']) ??
+        0;
+    final paymentMethodLabel =
+        _readString(admissionPreenvio, const [
+          'nombreFormaPago',
+          'NombreFormaPago',
+        ]).trim().isNotEmpty
+        ? _readString(admissionPreenvio, const [
+            'nombreFormaPago',
+            'NombreFormaPago',
+          ])
+        : _readString(printPayload, const ['FormaPago', 'formaPago']);
+    return VenderCollectionGuide(
+      guideNumber: syncResult.guideNumber.trim().isNotEmpty
+          ? syncResult.guideNumber
+          : admission.guideNumber,
+      paymentMethodId: paymentMethodId,
+      paymentMethodLabel: paymentMethodLabel,
+      isCollectPayment:
+          _readBool(admissionPreenvio, const ['esAlCobro', 'EsAlCobro']) ||
+          _readBool(guide, const ['EsAlCobro', 'esAlCobro']),
+      totalValue:
+          _readDouble(admissionPreenvio, const ['valorTotal', 'ValorTotal']) ??
+          _readDouble(guide, const ['ValorTotal', 'valorTotal']) ??
+          _readDouble(printPayload, const ['ValorTotal', 'valorTotal']) ??
+          0,
+      transportValue:
+          _readDouble(admissionPreenvio, const [
+            'valorAdmision',
+            'ValorAdmision',
+          ]) ??
+          _readDouble(guide, const ['ValorAdmision', 'valorAdmision']) ??
+          _readDouble(printPayload, const [
+            'ValorTransporte',
+            'valorTransporte',
+          ]) ??
+          0,
+      insuranceValue:
+          _readDouble(admissionPreenvio, const [
+            'valorPrimaSeguro',
+            'ValorPrimaSeguro',
+          ]) ??
+          _readDouble(guide, const ['ValorPrimaSeguro', 'valorPrimaSeguro']) ??
+          _readDouble(printPayload, const ['ValorPrima', 'valorPrima']) ??
+          0,
+      senderName: _coalesceText([
+        _readString(printPayload, const ['NombreRemitente']),
+        _readString(sender, const ['nombreCompleto', 'NombreCompleto']),
+        [
+          _readString(sender, const ['nombre', 'Nombre']),
+          _readString(sender, const ['primerApellido', 'PrimerApellido']),
+          _readString(sender, const ['segundoApellido', 'SegundoApellido']),
+        ].where((part) => part.trim().isNotEmpty).join(' '),
+      ]),
+      senderDocument: _coalesceText([
+        _readString(printPayload, const ['NumeroIdentificacionRemitente']),
+        _readString(sender, const ['numeroDocumento', 'NumeroDocumento']),
+      ]),
+      senderPhone: _coalesceText([
+        _readString(printPayload, const ['TelefonoRemitente']),
+        _readString(sender, const ['telefono', 'Telefono']),
+      ]),
+      senderEmail: _coalesceText([
+        _readString(printPayload, const ['EmailRemitente']),
+        _readString(sender, const ['correo', 'Correo']),
+      ]),
+      recipientName: _coalesceText([
+        _readString(printPayload, const ['NombreDestinatario']),
+        [
+          _readString(recipient, const ['nombre', 'Nombre']),
+          _readString(recipient, const ['primerApellido', 'PrimerApellido']),
+          _readString(recipient, const ['segundoApellido', 'SegundoApellido']),
+        ].where((part) => part.trim().isNotEmpty).join(' '),
+      ]),
+      idPickup: syncResult.idPickup,
+      idPreInvoice: syncResult.idPreInvoice,
+    );
+  }
+}
+
+class VenderCollectionState {
+  const VenderCollectionState({
+    required this.guides,
+    required this.selectedPaymentMethodId,
+    this.confirmed = false,
+  });
+
+  final List<VenderCollectionGuide> guides;
+  final int selectedPaymentMethodId;
+  final bool confirmed;
+
+  int get guideCount => guides.length;
+
+  int get idPickup {
+    for (final guide in guides) {
+      if (guide.idPickup > 0) return guide.idPickup;
+    }
+    return 0;
+  }
+
+  int get idPreInvoice {
+    for (final guide in guides) {
+      if (guide.idPreInvoice > 0) return guide.idPreInvoice;
+    }
+    return 0;
+  }
+
+  double get totalGuidesValue {
+    return guides
+        .where((guide) => guide.shouldChargeNow)
+        .fold(0, (total, guide) => total + guide.totalValue);
+  }
+
+  double get pickupValue => 0;
+
+  double get packageValue => 0;
+
+  double get totalToCharge => totalGuidesValue + pickupValue + packageValue;
+
+  String get selectedPaymentMethodName {
+    return VenderPaymentMethods.nameFor(selectedPaymentMethodId);
+  }
+
+  String get actionLabel {
+    return switch (selectedPaymentMethodId) {
+      VenderPaymentMethods.nequi => 'Continuar Nequi',
+      VenderPaymentMethods.linkPayment => 'Continuar link de pago',
+      VenderPaymentMethods.interPay => 'Continuar Inter Pay',
+      _ => 'Confirmar efectivo',
+    };
+  }
+
+  VenderCollectionState copyWith({
+    int? selectedPaymentMethodId,
+    bool? confirmed,
+  }) {
+    return VenderCollectionState(
+      guides: guides,
+      selectedPaymentMethodId:
+          selectedPaymentMethodId ?? this.selectedPaymentMethodId,
+      confirmed: confirmed ?? this.confirmed,
+    );
+  }
+}
+
+class VenderPaymentMethods {
+  const VenderPaymentMethods._();
+
+  static const cash = 1;
+  static const credit = 2;
+  static const collect = 3;
+  static const interPay = 4;
+  static const nequi = 5;
+  static const linkPayment = 6;
+
+  static const chargeable = <int>[cash, nequi, linkPayment, interPay];
+
+  static String nameFor(int id) {
+    return switch (id) {
+      cash => 'Efectivo',
+      credit => 'Credito',
+      collect => 'Al cobro',
+      interPay => 'Inter Pay',
+      nequi => 'Nequi',
+      linkPayment => 'Link de pago',
+      _ => 'Efectivo',
+    };
+  }
+}
+
 class VenderLocalException implements Exception {
   const VenderLocalException(this.message);
 
@@ -419,6 +694,21 @@ String _readString(Map<String, dynamic> json, List<String> keys) {
     if (json.containsKey(key) && json[key] != null) return json[key].toString();
   }
   return '';
+}
+
+int? _readInt(Map<String, dynamic> json, List<String> keys) {
+  final value = _readValue(json, keys);
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString().trim() ?? '');
+}
+
+double? _readDouble(Map<String, dynamic> json, List<String> keys) {
+  final value = _readValue(json, keys);
+  if (value is double) return value;
+  if (value is num) return value.toDouble();
+  final text = value?.toString().replaceAll(',', '.').trim() ?? '';
+  return double.tryParse(text);
 }
 
 bool _readBool(Map<String, dynamic> json, List<String> keys) {
@@ -460,4 +750,49 @@ List<Map<String, dynamic>> _readList(
       )
       .whereType<Map<String, dynamic>>()
       .toList();
+}
+
+Map<String, dynamic> _decodeJsonMap(String source) {
+  try {
+    final decoded = jsonDecode(source);
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) return Map<String, dynamic>.from(decoded);
+  } on Object {
+    return const <String, dynamic>{};
+  }
+  return const <String, dynamic>{};
+}
+
+String _coalesceText(List<String> values) {
+  for (final value in values) {
+    if (value.trim().isNotEmpty) return value.trim();
+  }
+  return '';
+}
+
+String _deepString(Object? value, List<String> keys) {
+  if (value is Map<String, dynamic>) {
+    for (final key in keys) {
+      if (value.containsKey(key) && value[key] != null) {
+        return value[key].toString();
+      }
+    }
+    for (final child in value.values) {
+      final found = _deepString(child, keys);
+      if (found.trim().isNotEmpty) return found;
+    }
+  } else if (value is Map) {
+    return _deepString(Map<String, dynamic>.from(value), keys);
+  } else if (value is List) {
+    for (final child in value) {
+      final found = _deepString(child, keys);
+      if (found.trim().isNotEmpty) return found;
+    }
+  }
+  return '';
+}
+
+int _deepInt(Object? value, List<String> keys) {
+  final text = _deepString(value, keys);
+  return int.tryParse(text.trim()) ?? 0;
 }
