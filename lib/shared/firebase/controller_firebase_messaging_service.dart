@@ -8,26 +8,13 @@ class ControllerFirebaseMessagingService {
   ControllerFirebaseMessagingService({FirebaseMessaging? messaging})
     : _messaging = messaging;
 
-  static const FirebaseOptions _iosFirebaseOptions = FirebaseOptions(
-    apiKey: 'AIzaSyDDfvV9vOlVXizjh-FG6GP9_EwVxyB3eps',
-    appId: '1:81189896208:ios:d3b4afda846e8671e44a95',
-    messagingSenderId: '81189896208',
-    projectId: 'black-circle-365516',
-    iosBundleId: 'interrapidisimo.controllerapp',
-  );
-
   final FirebaseMessaging? _messaging;
 
   static Future<void> initialize() async {
     if (Firebase.apps.isNotEmpty) return;
 
     try {
-      final options = _firebaseOptionsForCurrentPlatform();
-      if (options == null) {
-        await Firebase.initializeApp();
-      } else {
-        await Firebase.initializeApp(options: options);
-      }
+      await Firebase.initializeApp();
     } on Object {
       try {
         if (Firebase.apps.isEmpty) await Firebase.initializeApp();
@@ -35,14 +22,6 @@ class ControllerFirebaseMessagingService {
         // Tests and unsupported platforms can keep running without Firebase.
       }
     }
-  }
-
-  static FirebaseOptions? _firebaseOptionsForCurrentPlatform() {
-    if (kIsWeb) return null;
-    return switch (defaultTargetPlatform) {
-      TargetPlatform.iOS => _iosFirebaseOptions,
-      _ => null,
-    };
   }
 
   Stream<String> get onTokenRefresh {
@@ -58,20 +37,15 @@ class ControllerFirebaseMessagingService {
 
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-  final token = await messaging.getToken();
-  if (token != null && token.trim().isNotEmpty) {
-    return token.trim();
-  }
-  } on Exception catch (e, stackTrace) {
-    // Captura excepciones estándar de Firebase/Flutter
-    print('Error específico al obtener el token: $e');
-    print('Rastro del error: $stackTrace');
-    // Aquí puedes registrar el error en Crashlytics o mostrar una alerta
-  } catch (e, stackTrace) {
-    // Captura cualquier otro tipo de objeto/error que no sea una Exception
-    print('Error inesperado: $e');
-    print('Rastro del error: $stackTrace');
-  }
+        final token = await messaging.getToken();
+        if (token != null && token.trim().isNotEmpty) return token.trim();
+      } on Exception catch (error, stackTrace) {
+        debugPrint('Error al obtener token Firebase: $error');
+        debugPrint('$stackTrace');
+      } catch (error, stackTrace) {
+        debugPrint('Error inesperado al obtener token Firebase: $error');
+        debugPrint('$stackTrace');
+      }
       await Future<void>.delayed(Duration(seconds: attempt + 1));
     }
 
