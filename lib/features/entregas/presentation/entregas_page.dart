@@ -31,6 +31,7 @@ class EntregasPage extends StatefulWidget {
 
 class _EntregasPageState extends State<EntregasPage> {
   late final EntregasController _controller;
+  final _nativeBridge = ControllerNativeBridge();
   final _searchController = TextEditingController();
   _EntregaModule _selectedModule = _EntregaModule.enZona;
   bool _lastSearchWasQr = false;
@@ -42,6 +43,7 @@ class _EntregasPageState extends State<EntregasPage> {
       appInformation: widget.appInformation,
       apiConfig: widget.apiConfig,
       offline: widget.offline,
+      imageCompressor: _nativeBridge.compressImageBase64ToJpeg,
     )..addListener(_onControllerChanged);
     unawaited(_controller.initialize());
   }
@@ -682,8 +684,9 @@ class _DeliverySheetState extends State<_DeliverySheet> {
     final photo = await _nativeBridge.takePackagePhoto();
     final jpegPhoto = await _ensureJpegImage(
       photo,
-      maxDimension: 960,
-      quality: 50,
+      maxDimension: 480,
+      quality: 35,
+      maxBase64Length: 45 * 1024,
     );
     if (!mounted) return;
     if (jpegPhoto.trim().isEmpty) {
@@ -705,8 +708,9 @@ class _DeliverySheetState extends State<_DeliverySheet> {
           await _signatureKey.currentState?.capture() ?? '';
       final signature = await _ensureJpegImage(
         signatureCapture,
-        maxDimension: 900,
-        quality: 55,
+        maxDimension: 420,
+        quality: 35,
+        maxBase64Length: 10 * 1024,
       );
       if (signatureCapture.trim().isNotEmpty && signature.trim().isEmpty) {
         throw const EntregaException(
@@ -744,17 +748,25 @@ class _DeliverySheetState extends State<_DeliverySheet> {
     String imageBase64, {
     required int maxDimension,
     required int quality,
+    required int maxBase64Length,
   }) async {
     final cleanImage = _cleanBase64(imageBase64);
     if (cleanImage.isEmpty) return '';
-    if (_isJpegBase64(cleanImage)) return cleanImage;
     final converted = await _nativeBridge.compressImageBase64ToJpeg(
       cleanImage,
       maxDimension: maxDimension,
       quality: quality,
+      maxBase64Length: maxBase64Length,
     );
     final cleanConverted = _cleanBase64(converted);
-    return _isJpegBase64(cleanConverted) ? cleanConverted : '';
+    if (_isJpegBase64(cleanConverted) &&
+        cleanConverted.length <= maxBase64Length) {
+      return cleanConverted;
+    }
+    if (_isJpegBase64(cleanImage) && cleanImage.length <= maxBase64Length) {
+      return cleanImage;
+    }
+    return '';
   }
 
   bool _isJpegBase64(String imageBase64) {

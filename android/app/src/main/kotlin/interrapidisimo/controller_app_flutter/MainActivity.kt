@@ -64,7 +64,8 @@ class MainActivity : FlutterActivity() {
             bitmapToJpegBase64(
                 bitmap,
                 PHOTO_MAX_DIMENSION,
-                PHOTO_JPEG_QUALITY
+                PHOTO_JPEG_QUALITY,
+                PHOTO_MAX_BASE64_LENGTH
             )
         )
     }
@@ -100,7 +101,8 @@ class MainActivity : FlutterActivity() {
                 bitmapToJpegBase64(
                     bitmap,
                     call.argument<Int>("maxDimension") ?: PHOTO_MAX_DIMENSION,
-                    call.argument<Int>("quality") ?: PHOTO_JPEG_QUALITY
+                    call.argument<Int>("quality") ?: PHOTO_JPEG_QUALITY,
+                    call.argument<Int>("maxBase64Length") ?: PHOTO_MAX_BASE64_LENGTH
                 )
             )
         } catch (_: IllegalArgumentException) {
@@ -108,24 +110,50 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun bitmapToJpegBase64(bitmap: Bitmap, maxDimension: Int, quality: Int): String {
-        val scaled = scaleBitmap(bitmap, maxDimension)
-        val flattened = Bitmap.createBitmap(scaled.width, scaled.height, Bitmap.Config.RGB_565)
-        Canvas(flattened).apply {
-            drawColor(Color.WHITE)
-            drawBitmap(scaled, 0f, 0f, null)
+    private fun bitmapToJpegBase64(
+        bitmap: Bitmap,
+        maxDimension: Int,
+        quality: Int,
+        maxBase64Length: Int
+    ): String {
+        val safeMaxBase64Length = maxBase64Length.coerceAtLeast(1)
+        val initialQuality = quality.coerceIn(MIN_JPEG_QUALITY, MAX_JPEG_QUALITY)
+        var currentMaxDimension = maxDimension.coerceAtLeast(MIN_IMAGE_DIMENSION)
+        var currentQuality = initialQuality
+        var bestEncoded = ""
+
+        while (true) {
+            val scaled = scaleBitmap(bitmap, currentMaxDimension)
+            val flattened = Bitmap.createBitmap(scaled.width, scaled.height, Bitmap.Config.RGB_565)
+            Canvas(flattened).apply {
+                drawColor(Color.WHITE)
+                drawBitmap(scaled, 0f, 0f, null)
+            }
+            val output = ByteArrayOutputStream()
+            flattened.compress(Bitmap.CompressFormat.JPEG, currentQuality, output)
+            bestEncoded = Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+            if (scaled !== bitmap) {
+                scaled.recycle()
+            }
+            flattened.recycle()
+
+            if (bestEncoded.length <= safeMaxBase64Length) {
+                return bestEncoded
+            }
+
+            if (currentQuality > MIN_JPEG_QUALITY) {
+                currentQuality = (currentQuality - JPEG_QUALITY_STEP).coerceAtLeast(MIN_JPEG_QUALITY)
+                continue
+            }
+
+            val nextMaxDimension = (currentMaxDimension * IMAGE_DIMENSION_STEP).roundToInt()
+                .coerceAtLeast(MIN_IMAGE_DIMENSION)
+            if (nextMaxDimension == currentMaxDimension) {
+                return bestEncoded
+            }
+            currentMaxDimension = nextMaxDimension
+            currentQuality = initialQuality
         }
-        val output = ByteArrayOutputStream()
-        flattened.compress(
-            Bitmap.CompressFormat.JPEG,
-            quality.coerceIn(MIN_JPEG_QUALITY, MAX_JPEG_QUALITY),
-            output
-        )
-        if (scaled !== bitmap) {
-            scaled.recycle()
-        }
-        flattened.recycle()
-        return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
     }
 
     private fun scaleBitmap(bitmap: Bitmap, maxDimension: Int): Bitmap {
@@ -147,9 +175,13 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQUEST_PACKAGE_PHOTO = 4011
-        private const val PHOTO_MAX_DIMENSION = 960
-        private const val PHOTO_JPEG_QUALITY = 50
-        private const val MIN_JPEG_QUALITY = 1
+        private const val PHOTO_MAX_DIMENSION = 480
+        private const val PHOTO_JPEG_QUALITY = 35
+        private const val PHOTO_MAX_BASE64_LENGTH = 45 * 1024
+        private const val MIN_IMAGE_DIMENSION = 220
+        private const val IMAGE_DIMENSION_STEP = 0.82f
+        private const val MIN_JPEG_QUALITY = 8
         private const val MAX_JPEG_QUALITY = 100
+        private const val JPEG_QUALITY_STEP = 7
     }
 }

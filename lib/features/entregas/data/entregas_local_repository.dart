@@ -290,6 +290,36 @@ LIMIT 1
     return rows.map(EntregaPendingDownload.fromRow).toList();
   }
 
+  Future<EntregaPendingDownload> updatePendingPayload(
+    EntregaPendingDownload download,
+    Map<String, dynamic> payload,
+  ) async {
+    final db = await _openDatabase();
+    await _ensureTables(db);
+    final payloadJson = jsonEncode(payload);
+    await db.transaction((txn) async {
+      await txn.update(
+        'entregas_descargues_offline',
+        {'payload_json': payloadJson},
+        where: 'id = ?',
+        whereArgs: [download.id],
+      );
+      await txn.update(
+        'DescargueOffline_LO',
+        {'DEO_Objeto': payloadJson},
+        where: 'DEO_NumeroGuia = ?',
+        whereArgs: [download.guideNumber],
+      );
+      await txn.update(
+        'DescargueAWS',
+        {'DEO_Objeto': payloadJson},
+        where: 'DEO_NumeroGuia = ?',
+        whereArgs: [download.guideNumber],
+      );
+    });
+    return download.copyWith(payload: payload);
+  }
+
   Future<void> markDownloadSynced(
     EntregaPendingDownload download,
     EntregaSyncResult result,

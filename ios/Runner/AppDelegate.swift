@@ -64,7 +64,8 @@ import UserNotifications
           let data = compressedJpegData(
             from: image,
             maxDimension: CGFloat(photoMaxDimension),
-            quality: CGFloat(photoJpegQuality) / 100
+            quality: CGFloat(photoJpegQuality) / 100,
+            maxBase64Length: photoMaxBase64Length
           ) else {
       result?("")
       return
@@ -89,13 +90,15 @@ import UserNotifications
 
     let maxDimension = arguments["maxDimension"] as? Int ?? photoMaxDimension
     let quality = arguments["quality"] as? Int ?? photoJpegQuality
+    let maxBase64Length = arguments["maxBase64Length"] as? Int ?? photoMaxBase64Length
     let cleanBase64 = cleanBase64Value(imageBase64)
     guard let inputData = Data(base64Encoded: cleanBase64),
           let image = UIImage(data: inputData),
           let outputData = compressedJpegData(
             from: image,
             maxDimension: CGFloat(max(1, maxDimension)),
-            quality: CGFloat(min(max(quality, minJpegQuality), maxJpegQuality)) / 100
+            quality: CGFloat(min(max(quality, minJpegQuality), maxJpegQuality)) / 100,
+            maxBase64Length: max(1, maxBase64Length)
           ) else {
       result("")
       return
@@ -104,6 +107,48 @@ import UserNotifications
   }
 
   private func compressedJpegData(
+    from image: UIImage,
+    maxDimension: CGFloat,
+    quality: CGFloat,
+    maxBase64Length: Int
+  ) -> Data? {
+    var currentMaxDimension = max(CGFloat(minImageDimension), maxDimension)
+    let initialQuality = min(max(quality, CGFloat(minJpegQuality) / 100), 1)
+    var currentQuality = initialQuality
+    var bestData: Data?
+
+    while true {
+      guard let data = renderJpegData(
+        from: image,
+        maxDimension: currentMaxDimension,
+        quality: currentQuality
+      ) else {
+        return bestData
+      }
+      bestData = data
+      if base64Length(forByteCount: data.count) <= maxBase64Length {
+        return data
+      }
+      if currentQuality > CGFloat(minJpegQuality) / 100 {
+        currentQuality = max(
+          CGFloat(minJpegQuality) / 100,
+          currentQuality - CGFloat(jpegQualityStep) / 100
+        )
+        continue
+      }
+      let nextMaxDimension = max(
+        CGFloat(minImageDimension),
+        (currentMaxDimension * CGFloat(imageDimensionStep)).rounded()
+      )
+      if nextMaxDimension == currentMaxDimension {
+        return data
+      }
+      currentMaxDimension = nextMaxDimension
+      currentQuality = initialQuality
+    }
+  }
+
+  private func renderJpegData(
     from image: UIImage,
     maxDimension: CGFloat,
     quality: CGFloat
@@ -130,6 +175,10 @@ import UserNotifications
     return jpegImage.jpegData(compressionQuality: min(max(quality, 0.01), 1))
   }
 
+  private func base64Length(forByteCount byteCount: Int) -> Int {
+    return ((byteCount + 2) / 3) * 4
+  }
+
   private func cleanBase64Value(_ value: String) -> String {
     let withoutPrefix = value.components(separatedBy: "base64,").last ?? value
     return withoutPrefix
@@ -138,8 +187,12 @@ import UserNotifications
       .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  private let photoMaxDimension = 960
-  private let photoJpegQuality = 50
-  private let minJpegQuality = 1
+  private let photoMaxDimension = 480
+  private let photoJpegQuality = 35
+  private let photoMaxBase64Length = 45 * 1024
+  private let minImageDimension = 220
+  private let imageDimensionStep = 0.82
+  private let minJpegQuality = 8
   private let maxJpegQuality = 100
+  private let jpegQualityStep = 7
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../../shared/network/controller_api_config.dart';
@@ -6,6 +8,14 @@ import '../../data/entregas_local_repository.dart';
 import '../../data/entregas_remote_repository.dart';
 import '../../models/entregas_models.dart';
 
+typedef EntregaImageCompressor =
+    Future<String> Function(
+      String imageBase64, {
+      required int maxDimension,
+      required int quality,
+      required int maxBase64Length,
+    });
+
 class EntregasController extends ChangeNotifier {
   EntregasController({
     required this.appInformation,
@@ -13,6 +23,7 @@ class EntregasController extends ChangeNotifier {
     required this.offline,
     EntregasLocalRepository? localRepository,
     EntregasRemoteRepository? remoteRepository,
+    this.imageCompressor,
   }) : localRepository = localRepository ?? EntregasLocalRepository(),
        remoteRepository = remoteRepository ?? EntregasRemoteRepository();
 
@@ -21,6 +32,7 @@ class EntregasController extends ChangeNotifier {
   final bool offline;
   final EntregasLocalRepository localRepository;
   final EntregasRemoteRepository remoteRepository;
+  final EntregaImageCompressor? imageCompressor;
 
   EntregaGuideStatus selectedStatus = EntregaGuideStatus.enZona;
   bool loading = false;
@@ -273,12 +285,13 @@ class EntregasController extends ChangeNotifier {
       var synced = 0;
       for (final download in pending) {
         try {
+          final compactDownload = await _compactPendingDownload(download);
           final result = await remoteRepository.synchronizeDownload(
             config: apiConfig,
             appInformation: appInformation,
-            download: download,
+            download: compactDownload,
           );
-          await localRepository.markDownloadSynced(download, result);
+          await localRepository.markDownloadSynced(compactDownload, result);
           synced++;
         } on Object catch (error) {
           await localRepository.markDownloadFailed(download, error);
@@ -325,6 +338,104 @@ class EntregasController extends ChangeNotifier {
       notifyListeners();
     }
     if (!offline) await syncPending();
+  }
+
+  Future<EntregaPendingDownload> _compactPendingDownload(
+    EntregaPendingDownload download,
+  ) async {
+    if (download.type != EntregaDownloadType.entregaCorrectaMensajero ||
+        imageCompressor == null) {
+      return download;
+    }
+
+    final payload = _deepCopyMap(download.payload);
+    var changed = false;
+
+    final signature = payload['FirmaVirtual'];
+    if (signature is Map<String, dynamic>) {
+      final currentSignature = _cleanBase64(
+        signature['Firma']?.toString() ?? '',
+      );
+      if (currentSignature.isNotEmpty) {
+        final compactSignature = await _compactImage(
+          currentSignature,
+          maxDimension: 420,
+          quality: 35,
+          maxBase64Length: 10 * 1024,
+          label: 'firma',
+        );
+        if (compactSignature != currentSignature) {
+          signature['Firma'] = compactSignature;
+          changed = true;
+        }
+      }
+    }
+
+    final evidences = payload['TipoEvidencia'];
+    if (evidences is List) {
+      for (final evidence in evidences) {
+        if (evidence is! Map<String, dynamic>) continue;
+        final images = evidence['Imagenes'];
+        if (images is! List) continue;
+        for (var index = 0; index < images.length; index++) {
+          final currentImage = _cleanBase64(images[index]?.toString() ?? '');
+          if (currentImage.isEmpty) continue;
+          final compactImage = await _compactImage(
+            currentImage,
+            maxDimension: 480,
+            quality: 35,
+            maxBase64Length: 45 * 1024,
+            label: 'evidencia',
+          );
+          if (compactImage != currentImage) {
+            images[index] = compactImage;
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (!changed) return download;
+    return localRepository.updatePendingPayload(download, payload);
+  }
+
+  Future<String> _compactImage(
+    String imageBase64, {
+    required int maxDimension,
+    required int quality,
+    required int maxBase64Length,
+    required String label,
+  }) async {
+    final compact = _cleanBase64(
+      await imageCompressor!(
+        imageBase64,
+        maxDimension: maxDimension,
+        quality: quality,
+        maxBase64Length: maxBase64Length,
+      ),
+    );
+    if (compact.isNotEmpty && compact.length <= maxBase64Length) {
+      return compact;
+    }
+    if (imageBase64.length <= maxBase64Length) {
+      return imageBase64;
+    }
+    throw EntregaException(
+      'No fue posible comprimir la $label de entrega al tamano permitido.',
+    );
+  }
+
+  Map<String, dynamic> _deepCopyMap(Map<String, dynamic> source) {
+    return jsonDecode(jsonEncode(source)) as Map<String, dynamic>;
+  }
+
+  String _cleanBase64(String value) {
+    return value
+        .split('base64,')
+        .last
+        .replaceAll('\n', '')
+        .replaceAll('\r', '')
+        .trim();
   }
 
   Future<void> _loadLocal() async {

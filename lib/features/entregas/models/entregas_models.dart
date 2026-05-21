@@ -309,6 +309,26 @@ class EntregaPendingDownload {
   final String message;
   final DateTime? syncedAt;
 
+  EntregaPendingDownload copyWith({
+    Map<String, dynamic>? payload,
+    String? message,
+    bool? synced,
+    DateTime? syncedAt,
+  }) {
+    return EntregaPendingDownload(
+      id: id,
+      guideNumber: guideNumber,
+      type: type,
+      guide: guide,
+      payload: payload ?? this.payload,
+      synced: synced ?? this.synced,
+      createdAt: createdAt,
+      isQr: isQr,
+      message: message ?? this.message,
+      syncedAt: syncedAt ?? this.syncedAt,
+    );
+  }
+
   factory EntregaPendingDownload.fromRow(Map<String, Object?> row) {
     final guideJson = _decodeMap(row['guide_json']);
     return EntregaPendingDownload(
