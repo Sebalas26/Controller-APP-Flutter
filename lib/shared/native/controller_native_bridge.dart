@@ -47,9 +47,19 @@ class ControllerNativeBridge {
   Future<String> takePackagePhoto() async {
     try {
       return await _channel.invokeMethod<String>('takePackagePhoto') ?? '';
-    } on MissingPluginException {
+    } on MissingPluginException catch (e) {
+      print('takePackagePhoto - MissingPluginException: $e');
       return '';
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      print('takePackagePhoto - PlatformException: ${e.code} - ${e.message}');
+      if (e.code == 'PERMISSION_DENIED') {
+        print('Permiso de cámara denegado. Verifica los permisos de la app.');
+      } else if (e.code == 'CAMERA_ERROR' || e.code == 'CAMERA_LAUNCH_ERROR') {
+        print('Error al abrir cámara: ${e.message}');
+      }
+      return '';
+    } catch (e) {
+      print('takePackagePhoto - Unexpected error: $e');
       return '';
     }
   }
