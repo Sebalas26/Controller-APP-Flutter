@@ -2,6 +2,7 @@ package interrapidisimo.controller_app_flutter
 
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -10,6 +11,8 @@ import android.os.Build
 import android.provider.Settings
 import android.provider.MediaStore
 import android.util.Base64
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodCall
@@ -44,53 +47,141 @@ class MainActivity : FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQUEST_PACKAGE_PHOTO) return
-        val pending = pendingPhotoResult ?: return
+        
+        val pending = pendingPhotoResult
         pendingPhotoResult = null
-        if (resultCode != Activity.RESULT_OK) {
-            pending.success("")
-            return
-        }
-        val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            data?.extras?.getParcelable("data", Bitmap::class.java)
-        } else {
-            @Suppress("DEPRECATION")
-            data?.extras?.getParcelable("data") as? Bitmap
-        }
-        if (bitmap == null) {
-            pending.success("")
-            return
-        }
-        pending.success(
-            bitmapToJpegBase64(
+        
+        if (pending == null) return
+
+        try {
+            if (resultCode != Activity.RESULT_OK) {
+                pending.success("")
+                return
+            }
+
+            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                data?.extras?.getParcelable("data", Bitmap::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                data?.extras?.getParcelable("data") as? Bitmap
+            }
+
+            if (bitmap == null) {
+                pending.success("")
+                return
+            }
+
+            val jpegBase64 = bitmapToJpegBase64(
                 bitmap,
                 PHOTO_MAX_DIMENSION,
                 PHOTO_JPEG_QUALITY,
                 PHOTO_MAX_BASE64_LENGTH
             )
-        )
+            pending.success(jpegBase64)
+        } catch (e: Exception) {
+            try {
+                pending.success("")
+            } catch (e2: Exception) {
+                // Result already consumed
+            }
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != PERMISSION_REQUEST_CAMERA) return
+
+        val pending = pendingPhotoResult ?: return
+        
+        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            launchCameraIntent(pending)
+        } else {
+            pendingPhotoResult = null
+            try {
+                pending.error("PERMISSION_DENIED", "Permiso de cámara denegado", null)
+            } catch (e: Exception) {
+                // Result already consumed
+            }
+        }
     }
 
     private fun takePackagePhoto(result: MethodChannel.Result) {
-        if (pendingPhotoResult != null) {
-            result.error("CAMERA_BUSY", "Ya hay una captura en proceso.", null)
-            return
+        try {
+            if (pendingPhotoResult != null) {
+                result.error("CAMERA_BUSY", "Ya hay una captura en proceso.", null)
+                return
+            }
+            
+            // Check camera availability
+            if (!packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)) {
+                result.success("")
+                return
+            }
+
+            // Check and request permission
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA)
+                    == PackageManager.PERMISSION_GRANTED
+                ) {
+                    pendingPhotoResult = result
+                    launchCameraIntent(result)
+                } else {
+                    pendingPhotoResult = result
+                    ActivityCompat.requestPermissions(
+                        this,
+                        arrayOf(android.Manifest.permission.CAMERA),
+                        PERMISSION_REQUEST_CAMERA
+                    )
+                }
+            } else {
+                pendingPhotoResult = result
+                launchCameraIntent(result)
+            }
+        } catch (e: Exception) {
+            pendingPhotoResult = null
+            try {
+                result.error("CAMERA_ERROR", e.message ?: "Error al abrir cámara", null)
+            } catch (e2: Exception) {
+                // Result already consumed
+            }
         }
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        if (intent.resolveActivity(packageManager) == null) {
-            result.success("")
-            return
-        }
-        pendingPhotoResult = result
-        startActivityForResult(intent, REQUEST_PACKAGE_PHOTO)
     }
 
-    private fun compressImageBase64ToJpeg(call: MethodCall, result: MethodChannel.Result) {
-        val imageBase64 = call.argument<String>("imageBase64").orEmpty()
-        if (imageBase64.isBlank()) {
-            result.success("")
-            return
-        }
+    private fun launchCameraIntent(result: MethodChannel.Result) {
         try {
+            val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+            if (intent.resolveActivity(packageManager) == null) {
+                pendingPhotoResult = null
+                try {
+                    result.success("")
+                } catch (e: Exception) {
+                    // Result already consumed
+                }
+                return
+            }
+            startActivityForResult(intent, REQUEST_PACKAGE_PHOTO)
+        } catch (e: Exception) {
+            pendingPhotoResult = null
+            try {
+                result.error("CAMERA_LAUNCH_ERROR", e.message ?: "Error al iniciar cámara", null)
+            } catch (e2: Exception) {
+                // Result already consumed
+            }
+        }
+    }
+
+
+    private fun compressImageBase64ToJpeg(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val imageBase64 = call.argument<String>("imageBase64").orEmpty()
+            if (imageBase64.isBlank()) {
+                result.success("")
+                return
+            }
             val bytes = Base64.decode(cleanBase64(imageBase64), Base64.DEFAULT)
             val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             if (bitmap == null) {
@@ -105,8 +196,18 @@ class MainActivity : FlutterActivity() {
                     call.argument<Int>("maxBase64Length") ?: PHOTO_MAX_BASE64_LENGTH
                 )
             )
-        } catch (_: IllegalArgumentException) {
-            result.success("")
+        } catch (e: IllegalArgumentException) {
+            try {
+                result.success("")
+            } catch (e2: Exception) {
+                // Result already consumed
+            }
+        } catch (e: Exception) {
+            try {
+                result.success("")
+            } catch (e2: Exception) {
+                // Result already consumed
+            }
         }
     }
 
@@ -175,6 +276,7 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val REQUEST_PACKAGE_PHOTO = 4011
+        private const val PERMISSION_REQUEST_CAMERA = 4012
         private const val PHOTO_MAX_DIMENSION = 480
         private const val PHOTO_JPEG_QUALITY = 35
         private const val PHOTO_MAX_BASE64_LENGTH = 45 * 1024
@@ -185,3 +287,4 @@ class MainActivity : FlutterActivity() {
         private const val JPEG_QUALITY_STEP = 7
     }
 }
+
