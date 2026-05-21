@@ -329,13 +329,17 @@ LIMIT 1
         where: 'DEO_NumeroGuia = ?',
         whereArgs: [download.guideNumber],
       );
-      await txn.insert('DescarguesSincronizadosOffline_LO', {
-        'DEO_NumeroGuia': download.guideNumber,
-        'DEO_FechaEntrega': _sqliteDate(DateTime.now()),
-        'DEO_TipoDescargue': download.type.code,
-        'DEO_Objeto': jsonEncode(download.payload),
-        'DEO_ObjetoCompleto': jsonEncode(download.guide.toJson()),
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.insert(
+        'DescarguesSincronizadosOffline_LO',
+        {
+          'DEO_NumeroGuia': download.guideNumber,
+          'DEO_FechaEntrega': _sqliteDate(DateTime.now()),
+          'DEO_TipoDescargue': download.type.code,
+          'DEO_Objeto': jsonEncode(download.payload),
+          'DEO_ObjetoCompleto': jsonEncode(download.guide.toJson()),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
     });
   }
 
@@ -490,7 +494,9 @@ CREATE TABLE IF NOT EXISTS DevolucionMotivoGuia_LOI (
       whereArgs: [type.code],
     );
     for (final row in [...syncedRows, ...pendingRows]) {
-      final guide = EntregaGuide.fromJson(_decodeMap(row['DEO_ObjetoCompleto']));
+      final guide = EntregaGuide.fromJson(
+        _decodeMap(row['DEO_ObjetoCompleto']),
+      );
       if (guide.guideNumber.trim().isNotEmpty) {
         guides.putIfAbsent(guide.guideNumber, () => guide);
       }

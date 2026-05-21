@@ -115,10 +115,9 @@ class EntregaGuide {
       ]),
       city: _readAnyString(json, const ['Ciudad', 'ciudad']),
       cityId: _readAnyString(json, const ['IdCiudad', 'idCiudad']),
-      serviceId:
-          _readAnyInt(json, const ['IdServicio', 'idServicio']) != 0
-              ? _readAnyInt(json, const ['IdServicio', 'idServicio'])
-              : _readAnyInt(service, const ['IdServicio', 'idServicio']),
+      serviceId: _readAnyInt(json, const ['IdServicio', 'idServicio']) != 0
+          ? _readAnyInt(json, const ['IdServicio', 'idServicio'])
+          : _readAnyInt(service, const ['IdServicio', 'idServicio']),
       serviceName: _readAnyString(json, const [
         'TipoEnvioNombre',
         'tipoEnvioNombre',
@@ -177,11 +176,7 @@ class EntregaGuide {
     };
   }
 
-  EntregaGuide copyWith({
-    int? stateId,
-    String? stateName,
-    int? housingTypeId,
-  }) {
+  EntregaGuide copyWith({int? stateId, String? stateName, int? housingTypeId}) {
     return EntregaGuide(
       raw: raw,
       guideNumber: guideNumber,
@@ -346,7 +341,10 @@ class EntregaSyncResult {
   final int httpStatus;
 
   bool get success {
-    if (httpStatus >= 200 && httpStatus < 300 && resultCode == 0 && raw.isEmpty) {
+    if (httpStatus >= 200 &&
+        httpStatus < 300 &&
+        resultCode == 0 &&
+        raw.isEmpty) {
       return true;
     }
     return resultCode == 1 || resultCode == 100;
@@ -480,7 +478,9 @@ double _doubleValue(Object? value) {
   if (text.contains(',')) {
     return double.tryParse(text.replaceAll('.', '').replaceAll(',', '.')) ?? 0;
   }
-  return double.tryParse(text) ?? double.tryParse(text.replaceAll('.', '')) ?? 0;
+  return double.tryParse(text) ??
+      double.tryParse(text.replaceAll('.', '')) ??
+      0;
 }
 
 String _stringValue(Object? value) => value?.toString() ?? '';

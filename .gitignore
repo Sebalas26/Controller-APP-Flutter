@@ -24,6 +24,8 @@ migrate_working_dir/
 #.vscode/
 
 # Flutter/Dart/Pub related
+.dart-tool/
+.dartServer/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
@@ -31,6 +33,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/android/build/
 /coverage/
 
 # Symbolication related

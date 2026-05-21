@@ -30,7 +30,9 @@ class EntregasRemoteRepository {
   }) async {
     final messengerId = appInformation.idMensajero.trim();
     if (messengerId.isEmpty) {
-      throw const EntregaException('No hay id de mensajero para consultar en zona.');
+      throw const EntregaException(
+        'No hay id de mensajero para consultar en zona.',
+      );
     }
     final client = await _controllerClient(config, appInformation);
     final response = await client.get<dynamic>(
@@ -75,7 +77,9 @@ class EntregasRemoteRepository {
     final client = await _controllerClient(config, appInformation);
     final response = await client.get<dynamic>(
       'OperacionUrbanaController/ObtenerGuiaPamiPorNumeroGuia/${Uri.encodeComponent(guide)}',
-      options: Options(validateStatus: (status) => status != null && status < 600),
+      options: Options(
+        validateStatus: (status) => status != null && status < 600,
+      ),
     );
     final status = response.statusCode ?? 0;
     if (status == 404 || response.data == null) return null;
@@ -139,7 +143,9 @@ class EntregasRemoteRepository {
     final response = await client.post<dynamic>(
       'LogisticaInversa/DevolucionMensajeroControllerApp',
       data: download.payload,
-      options: Options(validateStatus: (status) => status != null && status < 600),
+      options: Options(
+        validateStatus: (status) => status != null && status < 600,
+      ),
     );
     return _syncResult(response, 'No fue posible sincronizar la devolucion.');
   }
@@ -153,7 +159,9 @@ class EntregasRemoteRepository {
     final response = await client.post<dynamic>(
       'LogisticaInversa/EntregaCorrectaMensajeroControllerApp',
       data: download.payload,
-      options: Options(validateStatus: (status) => status != null && status < 600),
+      options: Options(
+        validateStatus: (status) => status != null && status < 600,
+      ),
     );
     return _syncResult(response, 'No fue posible sincronizar la entrega.');
   }
@@ -181,7 +189,9 @@ class EntregasRemoteRepository {
     final response = await client.post<dynamic>(
       'Autorizador',
       data: {'Usuario': _proofUser, 'Password': _proofPassword},
-      options: Options(validateStatus: (status) => status != null && status < 600),
+      options: Options(
+        validateStatus: (status) => status != null && status < 600,
+      ),
     );
     final token = _findString(_asMap(response.data), const [
       'IdToken',
@@ -190,7 +200,9 @@ class EntregasRemoteRepository {
       'token',
     ]);
     if (token.trim().isEmpty) {
-      throw const EntregaException('No fue posible obtener token de prueba de entrega.');
+      throw const EntregaException(
+        'No fue posible obtener token de prueba de entrega.',
+      );
     }
     return token;
   }
@@ -225,7 +237,10 @@ class EntregasRemoteRepository {
     return client;
   }
 
-  Map<String, Object> _proofHeaders(String token, AppInformation appInformation) {
+  Map<String, Object> _proofHeaders(
+    String token,
+    AppInformation appInformation,
+  ) {
     return {
       'Usuario': appInformation.idUsuario,
       'IdUsuario': appInformation.idUsuario,

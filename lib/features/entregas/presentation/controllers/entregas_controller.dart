@@ -381,9 +381,7 @@ class EntregasController extends ChangeNotifier {
       'EsPagoQR': 'false',
       'EsSello': 'false',
       'FechaAsignacion': guide.assignmentDate,
-      'FechaEntrega': guide.auditDate.trim().isNotEmpty
-          ? guide.auditDate
-          : now,
+      'FechaEntrega': guide.auditDate.trim().isNotEmpty ? guide.auditDate : now,
       'MotivoGuia': reason?.toAwsJson(),
       'FechaGrabacion': now,
       'FirmaVirtual': signatureBase64.trim().isEmpty
@@ -455,10 +453,14 @@ class EntregasController extends ChangeNotifier {
       throw const EntregaException('Ingresa el nombre de quien recibe.');
     }
     if (recipient.numericDocument.isEmpty) {
-      throw const EntregaException('Ingresa la identificacion de quien recibe.');
+      throw const EntregaException(
+        'Ingresa la identificacion de quien recibe.',
+      );
     }
     if (recipient.numericDocument.startsWith('0')) {
-      throw const EntregaException('La identificacion no puede iniciar en cero.');
+      throw const EntregaException(
+        'La identificacion no puede iniciar en cero.',
+      );
     }
     if (signatureBase64.trim().isEmpty) {
       throw const EntregaException('Captura la firma de entrega.');

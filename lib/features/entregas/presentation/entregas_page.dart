@@ -175,9 +175,9 @@ class _EntregasPageState extends State<EntregasPage> {
           children: [
             Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             Wrap(
               spacing: 8,
@@ -256,7 +256,8 @@ class _EntregasPageState extends State<EntregasPage> {
               const SizedBox(height: 12),
               _GuideSummary(
                 guide: searched,
-                onDeliver: () => _openDelivery(searched, isQr: _lastSearchWasQr),
+                onDeliver: () =>
+                    _openDelivery(searched, isQr: _lastSearchWasQr),
                 onReturn: () => _openReturn(searched, isQr: _lastSearchWasQr),
               ),
             ],
@@ -367,11 +368,7 @@ class _EntregasPageState extends State<EntregasPage> {
       isScrollControlled: true,
       useSafeArea: true,
       builder: (context) {
-        return _ReturnSheet(
-          controller: _controller,
-          guide: guide,
-          isQr: isQr,
-        );
+        return _ReturnSheet(controller: _controller, guide: guide, isQr: isQr);
       },
     );
     if (completed == true && mounted) {
@@ -431,7 +428,9 @@ class _EntregasBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = controller.errorMessage ?? controller.statusMessage;
-    if (text.trim().isEmpty && !controller.syncing) return const SizedBox.shrink();
+    if (text.trim().isEmpty && !controller.syncing) {
+      return const SizedBox.shrink();
+    }
     final error = controller.errorMessage != null;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -463,11 +462,7 @@ class _EntregasBanner extends StatelessWidget {
 }
 
 class _GuideSummary extends StatelessWidget {
-  const _GuideSummary({
-    required this.guide,
-    this.onDeliver,
-    this.onReturn,
-  });
+  const _GuideSummary({required this.guide, this.onDeliver, this.onReturn});
 
   final EntregaGuide guide;
   final VoidCallback? onDeliver;
@@ -628,7 +623,10 @@ class _DeliverySheetState extends State<_DeliverySheet> {
           const SizedBox(height: 8),
           _SignaturePad(key: _signatureKey),
           const SizedBox(height: 14),
-          _SectionLabel(icon: Icons.photo_camera_outlined, label: 'Foto paquete'),
+          _SectionLabel(
+            icon: Icons.photo_camera_outlined,
+            label: 'Foto paquete',
+          ),
           const SizedBox(height: 8),
           _photoCapture(),
           const SizedBox(height: 16),
@@ -674,7 +672,7 @@ class _DeliverySheetState extends State<_DeliverySheet> {
   Uint8List? _photoBytes() {
     if (_photoBase64.trim().isEmpty) return null;
     try {
-      return base64Decode(_photoBase64);
+      return base64Decode(_cleanBase64(_photoBase64));
     } on Object {
       return null;
     }
@@ -682,23 +680,39 @@ class _DeliverySheetState extends State<_DeliverySheet> {
 
   Future<void> _takePhoto() async {
     final photo = await _nativeBridge.takePackagePhoto();
+    final jpegPhoto = await _ensureJpegImage(
+      photo,
+      maxDimension: 960,
+      quality: 50,
+    );
     if (!mounted) return;
-    if (photo.trim().isEmpty) {
+    if (jpegPhoto.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No fue posible capturar la foto.'),
+          content: Text('No fue posible capturar la foto en formato JPEG.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
       return;
     }
-    setState(() => _photoBase64 = photo);
+    setState(() => _photoBase64 = jpegPhoto);
   }
 
   Future<void> _submit() async {
     setState(() => _saving = true);
     try {
-      final signature = await _signatureKey.currentState?.capture() ?? '';
+      final signatureCapture =
+          await _signatureKey.currentState?.capture() ?? '';
+      final signature = await _ensureJpegImage(
+        signatureCapture,
+        maxDimension: 900,
+        quality: 55,
+      );
+      if (signatureCapture.trim().isNotEmpty && signature.trim().isEmpty) {
+        throw const EntregaException(
+          'No fue posible convertir la firma a JPEG.',
+        );
+      }
       await widget.controller.completeDelivery(
         guide: widget.guide,
         recipient: EntregaRecipientData(
@@ -724,6 +738,41 @@ class _DeliverySheetState extends State<_DeliverySheet> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<String> _ensureJpegImage(
+    String imageBase64, {
+    required int maxDimension,
+    required int quality,
+  }) async {
+    final cleanImage = _cleanBase64(imageBase64);
+    if (cleanImage.isEmpty) return '';
+    if (_isJpegBase64(cleanImage)) return cleanImage;
+    final converted = await _nativeBridge.compressImageBase64ToJpeg(
+      cleanImage,
+      maxDimension: maxDimension,
+      quality: quality,
+    );
+    final cleanConverted = _cleanBase64(converted);
+    return _isJpegBase64(cleanConverted) ? cleanConverted : '';
+  }
+
+  bool _isJpegBase64(String imageBase64) {
+    try {
+      final bytes = base64Decode(_cleanBase64(imageBase64));
+      return bytes.length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+    } on Object {
+      return false;
+    }
+  }
+
+  String _cleanBase64(String value) {
+    return value
+        .split('base64,')
+        .last
+        .replaceAll('\n', '')
+        .replaceAll('\r', '')
+        .trim();
   }
 }
 

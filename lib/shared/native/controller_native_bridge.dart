@@ -53,4 +53,23 @@ class ControllerNativeBridge {
       return '';
     }
   }
+
+  Future<String> compressImageBase64ToJpeg(
+    String imageBase64, {
+    int maxDimension = 960,
+    int quality = 50,
+  }) async {
+    try {
+      return await _channel.invokeMethod<String>('compressImageBase64ToJpeg', {
+            'imageBase64': imageBase64,
+            'maxDimension': maxDimension,
+            'quality': quality,
+          }) ??
+          '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
 }
