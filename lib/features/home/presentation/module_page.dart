@@ -22,6 +22,18 @@ class ModulePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (module.id == 'entregar') {
+      return Scaffold(
+        body: SafeArea(
+          child: EntregasPage(
+            appInformation: session.appInformation,
+            apiConfig: config.toApiConfig(),
+            offline: session.offline,
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: Text(module.title)),
       body: SingleChildScrollView(

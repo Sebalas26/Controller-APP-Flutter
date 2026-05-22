@@ -77,6 +77,8 @@ flutter:
       fonts:
         - asset: assets/fonts/montserrat_regular.ttf
           weight: 400
+        - asset: assets/fonts/montserrat_medium.otf
+          weight: 500
         - asset: assets/fonts/montserrat_semi_bold.otf
           weight: 600
         - asset: assets/fonts/montserrat_bold.ttf
