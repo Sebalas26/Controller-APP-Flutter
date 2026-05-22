@@ -1,21 +1,16 @@
 import 'package:flutter/material.dart';
 
-import '../../../../main.dart';
-import '../../../login/login.dart';
+import '../../../../shared/theme/app_colors.dart';
 
 class HomeFooter extends StatelessWidget {
   const HomeFooter({
     super.key,
     required this.userName,
-    required this.environment,
-    required this.syncStatus,
-    required this.offline,
+    required this.statusLabel,
   });
 
   final String userName;
-  final AppEnvironment environment;
-  final LocalSyncStatus? syncStatus;
-  final bool offline;
+  final String statusLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -38,11 +33,7 @@ class HomeFooter extends StatelessWidget {
             ),
           ),
           Text(
-            offline
-                ? 'Offline'
-                : syncStatus?.completed == true
-                ? 'Sync OK'
-                : environment.label,
+            statusLabel,
             style: const TextStyle(color: AppColors.white, fontSize: 12),
           ),
         ],

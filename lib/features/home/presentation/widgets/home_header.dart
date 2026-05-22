@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../main.dart';
+import '../../../../shared/constants/app_assets.dart';
+import '../../../../shared/theme/app_colors.dart';
 
 class HomeHeader extends StatelessWidget {
   const HomeHeader({
@@ -28,7 +29,7 @@ class HomeHeader extends StatelessWidget {
           Expanded(
             child: Center(
               child: Text(
-                'Controller App',
+                AppStrings.appName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(

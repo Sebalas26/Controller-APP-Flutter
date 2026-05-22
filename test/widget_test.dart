@@ -1,4 +1,4 @@
-import 'package:controller_app_flutter/main.dart';
+import 'package:controller_app_flutter/app/controller_app.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

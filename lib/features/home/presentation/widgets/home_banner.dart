@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../../main.dart';
+import '../../../../shared/config/app_environment.dart';
+import '../../../../shared/theme/app_colors.dart';
 
 class HomeBanner extends StatelessWidget {
-  const HomeBanner({
-    super.key,
-    required this.environment,
-  });
+  const HomeBanner({super.key, required this.environment});
 
   final AppEnvironment environment;
 

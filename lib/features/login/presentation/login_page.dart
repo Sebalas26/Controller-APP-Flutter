@@ -4,7 +4,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../data/login_data.dart';
+import '../../../shared/constants/app_assets.dart';
 import '../../../shared/network/controller_api_config.dart';
+import '../../../shared/theme/app_colors.dart';
 
 class LoginPage<T> extends StatefulWidget {
   const LoginPage({
@@ -168,7 +170,7 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _LoginColors.white,
+      backgroundColor: AppColors.white,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -179,7 +181,7 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
                 children: [
                   const SizedBox(height: 12),
                   Image.asset(
-                    'assets/images/logo_interrapidisimo.png',
+                    AppAssets.logoInterrapidisimo,
                     height: 42,
                     fit: BoxFit.contain,
                   ),
@@ -192,7 +194,7 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Image.asset(
-                            'assets/images/drone_flying_with_package.png',
+                            AppAssets.droneFlyingWithPackage,
                             height: 200,
                             fit: BoxFit.contain,
                           ),
@@ -221,7 +223,7 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
                                   _obscurePassword
                                       ? Icons.visibility_off_outlined
                                       : Icons.visibility_outlined,
-                                  color: _LoginColors.black,
+                                  color: AppColors.black,
                                 ),
                                 onPressed: _isLoading
                                     ? null
@@ -246,7 +248,7 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
                               const SizedBox(width: 10),
                               Switch(
                                 value: _rememberUser,
-                                activeThumbColor: _LoginColors.black,
+                                activeThumbColor: AppColors.black,
                                 onChanged: _isLoading
                                     ? null
                                     : (value) =>
@@ -265,7 +267,7 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
                                     height: 20,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      color: _LoginColors.white,
+                                      color: AppColors.white,
                                     ),
                                   )
                                 : const Text('Ingresar'),
@@ -277,7 +279,7 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 fontSize: 12,
-                                color: _LoginColors.gray700,
+                                color: AppColors.gray700,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -287,7 +289,7 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
                             initialValue: widget.environment,
                             decoration: const InputDecoration(
                               labelText: 'Ambiente',
-                              fillColor: _LoginColors.gray100,
+                              fillColor: AppColors.gray100,
                             ),
                             items: widget.environments
                                 .map(
@@ -310,10 +312,10 @@ class _LoginPageState<T> extends State<LoginPage<T>> {
                           const SizedBox(height: 24),
                           const Center(
                             child: Text(
-                              'V 1.1109136',
+                              AppStrings.appVersionLabel,
                               style: TextStyle(
                                 fontSize: 10,
-                                color: _LoginColors.black,
+                                color: AppColors.black,
                               ),
                             ),
                           ),
@@ -344,18 +346,11 @@ class _LoginFieldLabel extends StatelessWidget {
       child: Text(
         text,
         style: const TextStyle(
-          color: _LoginColors.black,
+          color: AppColors.black,
           fontSize: 14,
           fontWeight: FontWeight.w600,
         ),
       ),
     );
   }
-}
-
-class _LoginColors {
-  static const black = Color(0xFF212529);
-  static const white = Color(0xFFFFFFFF);
-  static const gray100 = Color(0xFFF9F9F9);
-  static const gray700 = Color(0xFF696F79);
 }
