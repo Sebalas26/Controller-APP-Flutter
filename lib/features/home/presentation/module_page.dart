@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../entregas/entregas.dart';
+import '../../recoger/recoger.dart';
 import '../../vender/vender.dart';
 import '../../../shared/config/app_environment.dart';
 import '../../../shared/theme/app_colors.dart';
@@ -38,6 +39,18 @@ class ModulePage extends StatelessWidget {
       return Scaffold(
         body: SafeArea(
           child: EntregasPage(
+            appInformation: session.appInformation,
+            apiConfig: config.toApiConfig(),
+            offline: session.offline,
+          ),
+        ),
+      );
+    }
+
+    if (module.id == 'recoger') {
+      return Scaffold(
+        body: SafeArea(
+          child: RecogerPage(
             appInformation: session.appInformation,
             apiConfig: config.toApiConfig(),
             offline: session.offline,
