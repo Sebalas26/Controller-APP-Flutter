@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/theme/app_colors.dart';
 import '../../models/vender_models.dart';
 
 class VenderPanel extends StatelessWidget {
@@ -9,13 +10,9 @@ class VenderPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1E6EF)),
-      ),
-      child: Padding(padding: const EdgeInsets.all(16), child: child),
+    return ColoredBox(
+      color: AppColors.white,
+      child: Padding(padding: const EdgeInsets.all(24), child: child),
     );
   }
 }
@@ -34,36 +31,43 @@ class VenderSectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: const Color(0xFF2569B3)),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
-                const SizedBox(height: 2),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.black, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  subtitle!,
+                  title,
                   style: const TextStyle(
-                    color: Color(0xFF696F79),
-                    fontWeight: FontWeight.w600,
+                    color: AppColors.black,
+                    fontFamily: 'Montserrat',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: const TextStyle(
+                      color: AppColors.gray700,
+                      fontFamily: 'Montserrat',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -76,6 +80,10 @@ class VenderTextInput extends StatelessWidget {
     this.keyboardType,
     this.maxLines = 1,
     this.readOnly = false,
+    this.requiredField = false,
+    this.center = false,
+    this.tooltip,
+    this.textCapitalization = TextCapitalization.none,
   });
 
   final String label;
@@ -83,15 +91,71 @@ class VenderTextInput extends StatelessWidget {
   final TextInputType? keyboardType;
   final int maxLines;
   final bool readOnly;
+  final bool requiredField;
+  final bool center;
+  final String? tooltip;
+  final TextCapitalization textCapitalization;
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      maxLines: maxLines,
-      readOnly: readOnly,
-      decoration: InputDecoration(labelText: label),
+    return _NativeFieldShell(
+      label: label,
+      requiredField: requiredField,
+      tooltip: tooltip,
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        readOnly: readOnly,
+        textCapitalization: textCapitalization,
+        textAlign: center ? TextAlign.center : TextAlign.start,
+        style: const TextStyle(
+          color: AppColors.black,
+          fontFamily: 'Prospero',
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+        ),
+        decoration: _underlineDecoration(),
+      ),
+    );
+  }
+}
+
+class VenderReadOnlyValue extends StatelessWidget {
+  const VenderReadOnlyValue({
+    super.key,
+    required this.label,
+    required this.value,
+    this.requiredField = false,
+    this.center = false,
+  });
+
+  final String label;
+  final String value;
+  final bool requiredField;
+  final bool center;
+
+  @override
+  Widget build(BuildContext context) {
+    return _NativeFieldShell(
+      label: label,
+      requiredField: requiredField,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 38),
+        alignment: center ? Alignment.center : Alignment.centerLeft,
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.black)),
+        ),
+        child: Text(
+          value.trim().isEmpty ? '0' : value,
+          textAlign: center ? TextAlign.center : TextAlign.start,
+          style: const TextStyle(
+            color: AppColors.black,
+            fontFamily: 'Prospero',
+            fontSize: 16,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -103,33 +167,48 @@ class VenderCatalogDropdown extends StatelessWidget {
     required this.options,
     required this.value,
     required this.onChanged,
+    this.requiredField = false,
   });
 
   final String label;
   final List<CatalogOption> options;
   final CatalogOption? value;
   final ValueChanged<CatalogOption?> onChanged;
+  final bool requiredField;
 
   @override
   Widget build(BuildContext context) {
     final selectedValue = _matchingValue();
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: options.isEmpty ? null : () => _openSelector(context),
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          suffixIcon: const Icon(Icons.search),
-        ),
-        child: Text(
-          selectedValue?.label ?? 'Seleccione',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: options.isEmpty
-                ? Theme.of(context).disabledColor
-                : const Color(0xFF212529),
-            fontWeight: FontWeight.w600,
+    return _NativeFieldShell(
+      label: label,
+      requiredField: requiredField,
+      child: InkWell(
+        onTap: options.isEmpty ? null : () => _openSelector(context),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 42),
+          padding: const EdgeInsets.only(top: 7, bottom: 6),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.black)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  selectedValue?.label ?? 'Seleccione',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: options.isEmpty
+                        ? AppColors.gray500
+                        : AppColors.black,
+                    fontFamily: 'Prospero',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+              const Icon(Icons.expand_more, color: AppColors.black),
+            ],
           ),
         ),
       ),
@@ -151,6 +230,418 @@ class VenderCatalogDropdown extends StatelessWidget {
     }
     return null;
   }
+}
+
+class VenderNativeButton extends StatelessWidget {
+  const VenderNativeButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.fullWidth = false,
+    this.enabled = true,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final Widget? icon;
+  final bool fullWidth;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = FilledButton.styleFrom(
+      backgroundColor: AppColors.black,
+      foregroundColor: AppColors.white,
+      disabledBackgroundColor: AppColors.gray200,
+      disabledForegroundColor: AppColors.gray500,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      textStyle: const TextStyle(
+        fontFamily: 'Montserrat',
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final effectiveOnPressed = enabled ? onPressed : null;
+    final button = icon == null
+        ? FilledButton(
+            onPressed: effectiveOnPressed,
+            style: style,
+            child: Text(label, textAlign: TextAlign.center),
+          )
+        : FilledButton.icon(
+            onPressed: effectiveOnPressed,
+            style: style,
+            icon: icon!,
+            label: Text(label, textAlign: TextAlign.center),
+          );
+    if (!fullWidth) return button;
+    return SizedBox(width: double.infinity, child: button);
+  }
+}
+
+class VenderYesNoSelector extends StatelessWidget {
+  const VenderYesNoSelector({
+    super.key,
+    required this.title,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.black,
+              fontFamily: 'Montserrat',
+              fontSize: 20,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _NativeRadio(
+                label: 'Si',
+                selected: value,
+                onTap: () => onChanged(true),
+              ),
+              const SizedBox(width: 32),
+              _NativeRadio(
+                label: 'No',
+                selected: !value,
+                onTap: () => onChanged(false),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class VenderResponsiveRow extends StatelessWidget {
+  const VenderResponsiveRow({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (final child in children) ...[
+          child,
+          if (child != children.last) const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+}
+
+class VenderStatusBanner extends StatelessWidget {
+  const VenderStatusBanner({
+    super.key,
+    this.message,
+    this.error,
+    this.loading = false,
+  });
+
+  final String? message;
+  final String? error;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final isError = error != null && error!.trim().isNotEmpty;
+    final text = isError ? error! : message;
+    if (!loading && (text == null || text.trim().isEmpty)) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 14, 24, 4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isError ? const Color(0xFFFFEBEE) : const Color(0xFFFFF6AE),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isError ? AppColors.red : const Color(0xFF8F7E01),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              if (loading)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(
+                  isError ? Icons.error_outline : Icons.warning_amber_rounded,
+                  color: isError ? AppColors.red : const Color(0xFF8F7E01),
+                ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  loading ? 'Procesando solicitud...' : text!,
+                  style: const TextStyle(
+                    color: AppColors.black,
+                    fontFamily: 'Montserrat',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class VenderEmptyState extends StatelessWidget {
+  const VenderEmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+      child: Column(
+        children: [
+          Icon(icon, size: 42, color: AppColors.gray700),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.black,
+              fontFamily: 'Montserrat',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            message,
+            style: const TextStyle(
+              color: AppColors.gray700,
+              fontFamily: 'Montserrat',
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class VenderStepRail extends StatelessWidget {
+  const VenderStepRail({
+    super.key,
+    required this.steps,
+    required this.currentStep,
+    required this.highestStep,
+    required this.onTap,
+  });
+
+  final List<VenderStepItem> steps;
+  final int currentStep;
+  final int highestStep;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        scrollDirection: Axis.horizontal,
+        itemCount: steps.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final step = steps[index];
+          final selected = index == currentStep;
+          final enabled = index <= highestStep;
+          return InkWell(
+            onTap: enabled ? () => onTap(index) : null,
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              width: 118,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? AppColors.black : AppColors.gray200,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Text(
+                step.label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: selected ? AppColors.white : AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class VenderStepItem {
+  const VenderStepItem(this.icon, this.label);
+
+  final IconData icon;
+  final String label;
+}
+
+class _NativeFieldShell extends StatelessWidget {
+  const _NativeFieldShell({
+    required this.label,
+    required this.child,
+    this.requiredField = false,
+    this.tooltip,
+  });
+
+  final String label;
+  final Widget child;
+  final bool requiredField;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.black,
+                    fontFamily: 'Prospero',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+              if (tooltip != null) ...[
+                const SizedBox(width: 5),
+                Tooltip(
+                  message: tooltip!,
+                  child: const Icon(
+                    Icons.info_outline,
+                    color: AppColors.black,
+                    size: 16,
+                  ),
+                ),
+              ],
+              if (requiredField) ...[
+                const SizedBox(width: 5),
+                const Text(
+                  '*',
+                  style: TextStyle(
+                    color: AppColors.black,
+                    fontFamily: 'Montserrat',
+                    fontSize: 24,
+                    height: 0.8,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _NativeRadio extends StatelessWidget {
+  const _NativeRadio({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            selected ? Icons.radio_button_checked : Icons.radio_button_off,
+            color: AppColors.black,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.black,
+              fontFamily: 'Montserrat',
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+InputDecoration _underlineDecoration() {
+  return const InputDecoration(
+    isDense: true,
+    border: UnderlineInputBorder(
+      borderSide: BorderSide(color: AppColors.black),
+    ),
+    enabledBorder: UnderlineInputBorder(
+      borderSide: BorderSide(color: AppColors.black),
+    ),
+    focusedBorder: UnderlineInputBorder(
+      borderSide: BorderSide(color: AppColors.black, width: 1.4),
+    ),
+    contentPadding: EdgeInsets.only(top: 8, bottom: 3),
+  );
 }
 
 class _CatalogSearchDialog extends StatefulWidget {
@@ -182,11 +673,15 @@ class _CatalogSearchDialogState extends State<_CatalogSearchDialog> {
     final options = _filteredOptions();
     return Dialog(
       insetPadding: const EdgeInsets.all(18),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      backgroundColor: AppColors.white,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AppColors.black),
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
           child: Column(
             children: [
               Row(
@@ -195,25 +690,28 @@ class _CatalogSearchDialogState extends State<_CatalogSearchDialog> {
                     child: Text(
                       widget.label,
                       style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
+                        color: AppColors.black,
+                        fontFamily: 'Montserrat',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Icons.close, color: AppColors.black),
                     tooltip: 'Cerrar',
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const Divider(color: AppColors.gray200, thickness: 2),
               TextField(
                 controller: _query,
                 autofocus: true,
+                style: const TextStyle(fontFamily: 'Prospero'),
                 decoration: const InputDecoration(
                   labelText: 'Filtrar por nombre',
-                  prefixIcon: Icon(Icons.search),
+                  prefixIcon: Icon(Icons.search, color: AppColors.black),
                 ),
                 onChanged: (_) => setState(() {}),
               ),
@@ -237,15 +735,14 @@ class _CatalogSearchDialogState extends State<_CatalogSearchDialog> {
                             leading: Icon(
                               selected
                                   ? Icons.radio_button_checked
-                                  : Icons.radio_button_unchecked,
-                              color: selected
-                                  ? const Color(0xFF2569B3)
-                                  : const Color(0xFF696F79),
+                                  : Icons.radio_button_off,
+                              color: AppColors.black,
                             ),
                             title: Text(
                               option.label,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontFamily: 'Prospero'),
                             ),
                             subtitle: option.id.trim().isEmpty
                                 ? null
@@ -272,215 +769,4 @@ class _CatalogSearchDialogState extends State<_CatalogSearchDialog> {
           });
     return source.take(100).toList();
   }
-}
-
-class VenderResponsiveRow extends StatelessWidget {
-  const VenderResponsiveRow({super.key, required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth < 680) {
-          return Column(
-            children: [
-              for (final child in children) ...[
-                child,
-                if (child != children.last) const SizedBox(height: 14),
-              ],
-            ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final child in children) ...[
-              Expanded(child: child),
-              if (child != children.last) const SizedBox(width: 14),
-            ],
-          ],
-        );
-      },
-    );
-  }
-}
-
-class VenderStatusBanner extends StatelessWidget {
-  const VenderStatusBanner({
-    super.key,
-    this.message,
-    this.error,
-    this.loading = false,
-  });
-
-  final String? message;
-  final String? error;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final isError = error != null && error!.trim().isNotEmpty;
-    final text = isError ? error! : message;
-    if (!loading && (text == null || text.trim().isEmpty)) {
-      return const SizedBox.shrink();
-    }
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isError ? const Color(0xFFFFEBEE) : const Color(0xFFE8EFF7),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isError ? const Color(0xFFCF1111) : const Color(0xFFBFD2EA),
-        ),
-      ),
-      child: Row(
-        children: [
-          if (loading)
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            Icon(
-              isError ? Icons.error_outline : Icons.info_outline,
-              color: isError
-                  ? const Color(0xFFCF1111)
-                  : const Color(0xFF2569B3),
-            ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              loading ? 'Procesando solicitud...' : text!,
-              style: TextStyle(
-                color: isError
-                    ? const Color(0xFF8A0A0A)
-                    : const Color(0xFF1F4F82),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class VenderEmptyState extends StatelessWidget {
-  const VenderEmptyState({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.message,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        children: [
-          Icon(icon, size: 42, color: const Color(0xFF696F79)),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            message,
-            style: const TextStyle(color: Color(0xFF696F79)),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class VenderStepRail extends StatelessWidget {
-  const VenderStepRail({
-    super.key,
-    required this.steps,
-    required this.currentStep,
-    required this.highestStep,
-    required this.onTap,
-  });
-
-  final List<VenderStepItem> steps;
-  final int currentStep;
-  final int highestStep;
-  final ValueChanged<int> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 82,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: steps.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final step = steps[index];
-          final selected = index == currentStep;
-          final enabled = index <= highestStep;
-          return SizedBox(
-            width: 136,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: enabled ? () => onTap(index) : null,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: selected ? const Color(0xFF212529) : Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE1E6EF)),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        step.icon,
-                        color: selected
-                            ? Colors.white
-                            : const Color(0xFF2569B3),
-                      ),
-                      const Spacer(),
-                      Text(
-                        step.label,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: selected
-                              ? Colors.white
-                              : const Color(0xFF212529),
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class VenderStepItem {
-  const VenderStepItem(this.icon, this.label);
-
-  final IconData icon;
-  final String label;
 }

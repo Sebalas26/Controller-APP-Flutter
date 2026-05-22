@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/theme/app_colors.dart';
 import '../../models/vender_models.dart';
 import '../controllers/vender_flow_controller.dart';
 import '../widgets/vender_form_widgets.dart';
@@ -28,28 +29,27 @@ class VenderSettlementView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const VenderSectionTitle(
-          icon: Icons.request_quote_outlined,
-          title: 'Confirmar liquidacion',
-          subtitle: 'Servicios y valores calculados con tarifas offline',
+        const SizedBox(height: 8),
+        _SelectedServiceField(
+          selected: controller.selectedQuote?.name ?? 'Clase Servicio',
+          onPressed: () => runAction(controller.quoteServices),
         ),
-        const SizedBox(height: 16),
-        VenderResponsiveRow(
-          children: [
-            VenderCatalogDropdown(
-              label: 'Tipo de envio',
-              options: controller.shippingTypes,
-              value: controller.shippingType,
-              onChanged: controller.selectShippingType,
-            ),
-            OutlinedButton.icon(
-              onPressed: () => runAction(controller.quoteServices),
-              icon: const Icon(Icons.calculate_outlined),
-              label: const Text('Consultar servicios'),
-            ),
-          ],
+        VenderCatalogDropdown(
+          label: 'Tipo de envio',
+          options: controller.shippingTypes,
+          value: controller.shippingType,
+          onChanged: controller.selectShippingType,
+          requiredField: true,
         ),
-        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: VenderNativeButton(
+            label: 'Consultar servicios',
+            fullWidth: true,
+            icon: const Icon(Icons.calculate_outlined),
+            onPressed: () => runAction(controller.quoteServices),
+          ),
+        ),
         if (controller.serviceQuotes.isEmpty)
           const VenderEmptyState(
             icon: Icons.local_shipping_outlined,
@@ -57,54 +57,162 @@ class VenderSettlementView extends StatelessWidget {
             message: 'Calcula la liquidacion para ver servicios habilitados.',
           )
         else
-          Column(
-            children: [
-              for (final quote in controller.serviceQuotes) ...[
-                _QuoteTile(
-                  quote: quote,
-                  selected: controller.selectedQuote?.id == quote.id,
-                  onTap: () => controller.selectQuote(quote),
-                ),
-                const SizedBox(height: 8),
-              ],
-            ],
+          _QuoteList(
+            quotes: controller.serviceQuotes,
+            selected: controller.selectedQuote,
+            onSelect: controller.selectQuote,
           ),
-        const SizedBox(height: 14),
-        VenderResponsiveRow(
-          children: [
-            VenderTextInput(label: 'Contenido', controller: controller.content),
-            VenderTextInput(
-              label: 'Bolsa de seguridad',
-              controller: controller.securityBag,
-              keyboardType: TextInputType.number,
-            ),
-          ],
+        VenderTextInput(
+          label: 'Contenido',
+          controller: controller.content,
+          requiredField: true,
+          textCapitalization: TextCapitalization.sentences,
         ),
-        const SizedBox(height: 14),
+        VenderTextInput(
+          label: 'Bolsa de seguridad (Opcional)',
+          controller: controller.securityBag,
+          keyboardType: TextInputType.text,
+        ),
         VenderCatalogDropdown(
           label: 'Agregar empaque',
           options: catalogs.packages,
           value: controller.selectedPackage,
           onChanged: controller.setSelectedPackage,
         ),
-        const SizedBox(height: 14),
         VenderTextInput(
-          label: 'Observaciones',
+          label: 'Observaciones (Opcional)',
           controller: controller.observations,
           maxLines: 3,
+          textCapitalization: TextCapitalization.sentences,
         ),
-        const SizedBox(height: 10),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
+        VenderYesNoSelector(
+          title: 'Verificacion de contenido',
           value: controller.contentChecked,
           onChanged: controller.setContentChecked,
-          title: const Text('Verificacion de contenido'),
         ),
         if (controller.selectedQuote != null) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           _Totals(quote: controller.selectedQuote!),
         ],
+        const SizedBox(height: 44),
+        TextButton(
+          onPressed: () {},
+          child: const Text(
+            'Agregar empaque',
+            style: TextStyle(
+              color: AppColors.black,
+              fontFamily: 'Montserrat',
+              fontSize: 21,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
       ],
+    );
+  }
+}
+
+class _SelectedServiceField extends StatelessWidget {
+  const _SelectedServiceField({
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Text(
+                'Tipo de servicio',
+                style: TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Prospero',
+                  fontSize: 12,
+                ),
+              ),
+              SizedBox(width: 5),
+              Text(
+                '*',
+                style: TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 24,
+                  height: 0.8,
+                ),
+              ),
+            ],
+          ),
+          InkWell(
+            onTap: onPressed,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 42),
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(left: 8, right: 8),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppColors.black)),
+              ),
+              child: Text(
+                selected,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Prospero',
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuoteList extends StatelessWidget {
+  const _QuoteList({
+    required this.quotes,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final List<VenderServiceQuote> quotes;
+  final VenderServiceQuote? selected;
+  final ValueChanged<VenderServiceQuote> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 10, 24, 8),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: AppColors.black),
+        ),
+        child: Column(
+          children: [
+            for (final quote in quotes.take(6)) ...[
+              _QuoteTile(
+                quote: quote,
+                selected: selected?.id == quote.id,
+                onTap: () => onSelect(quote),
+              ),
+              if (quote != quotes.take(6).last)
+                const Divider(height: 1, color: AppColors.gray200),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -123,55 +231,65 @@ class _QuoteTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      borderRadius: BorderRadius.circular(8),
       onTap: onTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFE8EFF7) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: selected ? const Color(0xFF2569B3) : const Color(0xFFE1E6EF),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Icon(
-                selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                color: const Color(0xFF2569B3),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      quote.name,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Base ${_money(quote.baseValue)} + prima ${_money(quote.insuranceValue)}',
-                      style: const TextStyle(color: Color(0xFF696F79)),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                _money(quote.totalValue),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 80),
+        color: selected ? AppColors.gray200 : AppColors.white,
+        child: Row(
+          children: [
+            Expanded(child: _QuoteCell(quote.name)),
+            const _QuoteSeparator(),
+            Expanded(child: _QuoteCell(_deliveryText(quote.deliveryDays))),
+            const _QuoteSeparator(),
+            Expanded(child: _QuoteCell(_money(quote.baseValue))),
+            const _QuoteSeparator(),
+            Expanded(child: _QuoteCell(_money(quote.insuranceValue))),
+            const _QuoteSeparator(),
+            Expanded(child: _QuoteCell(_money(quote.totalValue), strong: true)),
+          ],
         ),
       ),
     );
+  }
+
+  String _deliveryText(int days) {
+    if (days <= 0) return 'Entrega';
+    return '$days dias';
+  }
+}
+
+class _QuoteCell extends StatelessWidget {
+  const _QuoteCell(this.text, {this.strong = false});
+
+  final String text;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Text(
+        text,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: AppColors.black,
+          fontFamily: 'Montserrat',
+          fontSize: 10,
+          fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _QuoteSeparator extends StatelessWidget {
+  const _QuoteSeparator();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Text('|', style: TextStyle(color: AppColors.black));
   }
 }
 
@@ -182,53 +300,73 @@ class _Totals extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9F9F9),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            _TotalRow('Valor flete', quote.baseValue),
-            _TotalRow('Prima seguro', quote.insuranceValue),
-            const Divider(),
-            _TotalRow('Total', quote.totalValue, strong: true),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 15, 24, 0),
+      child: Column(
+        children: [
+          _TotalRow('Forma pago', 'Contado'),
+          _TotalRow('Servicio', quote.name, amount: quote.totalValue),
+          _TotalRow('Empaque', 'Sin empaque', amount: 0),
+          const SizedBox(height: 5),
+          _TotalRow('Total', '', amount: quote.totalValue, strong: true),
+        ],
       ),
     );
   }
 }
 
 class _TotalRow extends StatelessWidget {
-  const _TotalRow(this.label, this.value, {this.strong = false});
+  const _TotalRow(this.label, this.value, {this.amount, this.strong = false});
 
   final String label;
-  final double value;
+  final String value;
+  final double? amount;
   final bool strong;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
+          SizedBox(
+            width: strong ? 158 : 92,
             child: Text(
               label,
-              style: TextStyle(
-                fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+              style: const TextStyle(
+                color: AppColors.black,
+                fontFamily: 'Montserrat',
+                fontSize: 16,
               ),
             ),
           ),
-          Text(
-            _money(value),
-            style: TextStyle(
-              fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.black,
+                fontFamily: 'Montserrat',
+                fontSize: 16,
+              ),
             ),
           ),
+          if (amount != null)
+            SizedBox(
+              width: 112,
+              child: Text(
+                _money(amount!),
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 16,
+                  fontWeight: strong ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
         ],
       ),
     );

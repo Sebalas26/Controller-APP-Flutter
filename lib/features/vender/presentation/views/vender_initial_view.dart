@@ -27,124 +27,120 @@ class VenderInitialView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        VenderSectionTitle(
-          icon: Icons.inventory_2_outlined,
-          title: 'Datos del envio',
-          subtitle: controller.appInformation.nombreCentroServicio,
+        const SizedBox(height: 8),
+        VenderTextInput(
+          label: 'Numero de preguia / preenvio',
+          controller: controller.preGuide,
+          keyboardType: TextInputType.number,
+          center: true,
         ),
-        const SizedBox(height: 16),
-        VenderResponsiveRow(
-          children: [
-            VenderTextInput(
-              label: 'Numero de pregua/preenvio',
-              controller: controller.preGuide,
-              keyboardType: TextInputType.number,
-            ),
-            OutlinedButton.icon(
-              onPressed: controller.busyRemote
-                  ? null
-                  : () => runAction(controller.verifyPreguide),
-              icon: const Icon(Icons.search),
-              label: const Text('Verificar'),
-            ),
-          ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: VenderNativeButton(
+            label: 'Verificar preenvio',
+            fullWidth: true,
+            icon: const Icon(Icons.search),
+            onPressed: controller.busyRemote
+                ? null
+                : () => runAction(controller.verifyPreguide),
+          ),
         ),
-        const SizedBox(height: 14),
         VenderCatalogDropdown(
           label: 'Ciudad de destino',
           options: catalogs.destinationCities,
           value: controller.destinationCity,
           onChanged: controller.selectDestination,
+          requiredField: true,
         ),
-        const SizedBox(height: 14),
         VenderCatalogDropdown(
           label: 'Tipo de entrega',
           options: controller.deliveryTypes,
           value: controller.deliveryType,
           onChanged: controller.selectDeliveryType,
+          requiredField: true,
         ),
-        const SizedBox(height: 14),
-        VenderResponsiveRow(
-          children: [
-            VenderTextInput(
-              label: '# de piezas',
-              controller: controller.pieces,
-              keyboardType: TextInputType.number,
-            ),
-            VenderTextInput(
-              label: 'Peso Kg - bascula',
-              controller: controller.weightScale,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-            ),
-            VenderTextInput(
-              label: 'Peso Kg - volumetrico',
-              controller: controller.weightVolume,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-            ),
-          ],
+        VenderTextInput(
+          label: 'Numero Piezas',
+          controller: controller.pieces,
+          keyboardType: TextInputType.number,
+          requiredField: true,
+          center: true,
         ),
-        const SizedBox(height: 14),
-        VenderResponsiveRow(
-          children: [
-            VenderTextInput(
-              label: 'Largo cm',
-              controller: controller.length,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-            ),
-            VenderTextInput(
-              label: 'Ancho cm',
-              controller: controller.width,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-            ),
-            VenderTextInput(
-              label: 'Alto cm',
-              controller: controller.height,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-            ),
-          ],
+        VenderTextInput(
+          label: 'Peso Kg - bascula',
+          controller: controller.weightScale,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          requiredField: true,
+          center: true,
         ),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+          child: VenderNativeButton(
+            label: 'Peso Kg Bascula (Opcional)',
+            fullWidth: true,
+            enabled: false,
             onPressed: controller.calculateVolumeWeight,
-            icon: const Icon(Icons.straighten),
-            label: const Text('Calcular peso volumetrico'),
           ),
         ),
-        const SizedBox(height: 14),
-        VenderResponsiveRow(
-          children: [
-            VenderTextInput(
-              label: 'Valor comercial',
-              controller: controller.declaredValue,
-              keyboardType: TextInputType.number,
-            ),
-            VenderCatalogDropdown(
-              label: 'Forma de pago',
-              options: catalogs.paymentMethods,
-              value: controller.paymentMethod,
-              onChanged: controller.selectPaymentMethod,
-            ),
-          ],
+        VenderTextInput(
+          label: 'Largo cm',
+          controller: controller.length,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          center: true,
         ),
-        const SizedBox(height: 10),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
+        VenderTextInput(
+          label: 'Ancho cm',
+          controller: controller.width,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          center: true,
+        ),
+        VenderTextInput(
+          label: 'Alto cm',
+          controller: controller.height,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          center: true,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: VenderNativeButton(
+            label: 'Calcular peso volumetrico',
+            fullWidth: true,
+            icon: const Icon(Icons.straighten),
+            onPressed: controller.calculateVolumeWeight,
+          ),
+        ),
+        VenderTextInput(
+          label: 'Peso Kg - volumetrico (Opcional)',
+          controller: controller.weightVolume,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          center: true,
+        ),
+        VenderReadOnlyValue(
+          label: 'Peso Total',
+          value: controller.finalWeight.toStringAsFixed(2),
+          requiredField: true,
+          center: true,
+        ),
+        VenderTextInput(
+          label: 'Valor comercial',
+          controller: controller.declaredValue,
+          keyboardType: TextInputType.number,
+          requiredField: true,
+          center: true,
+        ),
+        VenderCatalogDropdown(
+          label: 'Forma de pago',
+          options: catalogs.paymentMethods,
+          value: controller.paymentMethod,
+          onChanged: controller.selectPaymentMethod,
+          requiredField: true,
+        ),
+        VenderYesNoSelector(
+          title: 'Pago en casa',
           value: controller.paymentAtHome,
           onChanged: controller.setPaymentAtHome,
-          title: const Text('Pago en casa'),
         ),
+        const SizedBox(height: 20),
       ],
     );
   }

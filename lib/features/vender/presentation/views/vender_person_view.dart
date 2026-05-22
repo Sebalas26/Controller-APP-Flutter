@@ -32,14 +32,7 @@ class VenderPersonView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        VenderSectionTitle(
-          icon: _isSender ? Icons.person_outline : Icons.location_on_outlined,
-          title: _isSender ? 'Datos remitente' : 'Datos destinatario',
-          subtitle: _isSender
-              ? controller.appInformation.nombreCiudad
-              : controller.destinationCity?.label,
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
         VenderResponsiveRow(
           children: [
             VenderCatalogDropdown(
@@ -48,54 +41,64 @@ class VenderPersonView extends StatelessWidget {
               value: _identificationType,
               onChanged: (value) =>
                   controller.setIdentificationType(kind, value),
+              requiredField: true,
             ),
             VenderTextInput(
-              label: 'Documento',
+              label: 'Identificacion',
               controller: _document,
               keyboardType: TextInputType.number,
+              requiredField: true,
+              tooltip: 'Ingresa el documento del cliente.',
             ),
             VenderTextInput(
               label: 'Celular',
               controller: _phone,
               keyboardType: TextInputType.phone,
+              requiredField: true,
+              tooltip: 'Ingresa el celular del cliente.',
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            OutlinedButton.icon(
-              onPressed: controller.busyRemote
-                  ? null
-                  : () => runAction(() => controller.lookupPerson(kind)),
-              icon: const Icon(Icons.manage_search),
-              label: const Text('Consultar cliente'),
-            ),
-            if (!_isSender)
-              TextButton.icon(
-                onPressed: controller.copySenderToRecipient,
-                icon: const Icon(Icons.copy_all_outlined),
-                label: const Text('Copiar remitente'),
-              ),
-          ],
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: VenderNativeButton(
+            label: 'Consultar cliente',
+            fullWidth: true,
+            icon: const Icon(Icons.manage_search),
+            onPressed: controller.busyRemote
+                ? null
+                : () => runAction(() => controller.lookupPerson(kind)),
+          ),
         ),
-        const SizedBox(height: 14),
+        if (!_isSender)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
+            child: TextButton.icon(
+              onPressed: controller.copySenderToRecipient,
+              icon: const Icon(Icons.copy_all_outlined),
+              label: const Text('Copiar remitente'),
+            ),
+          ),
         VenderResponsiveRow(
           children: [
-            VenderTextInput(label: 'Nombres', controller: _name),
+            VenderTextInput(
+              label: 'Nombre / Razon social',
+              controller: _name,
+              requiredField: true,
+              textCapitalization: TextCapitalization.characters,
+            ),
             VenderTextInput(
               label: 'Primer apellido',
               controller: _firstLastName,
+              textCapitalization: TextCapitalization.characters,
             ),
             VenderTextInput(
               label: 'Segundo apellido',
               controller: _secondLastName,
+              textCapitalization: TextCapitalization.characters,
             ),
           ],
         ),
-        const SizedBox(height: 14),
         VenderResponsiveRow(
           children: [
             VenderCatalogDropdown(
@@ -103,19 +106,26 @@ class VenderPersonView extends StatelessWidget {
               options: catalogs.addressTypes,
               value: _addressType,
               onChanged: (value) => controller.setAddressType(kind, value),
+              requiredField: true,
             ),
-            VenderTextInput(label: 'Via / calle', controller: _street),
-            VenderTextInput(label: 'Numero', controller: _number),
+            VenderTextInput(
+              label: 'Via / calle',
+              controller: _street,
+              requiredField: true,
+              textCapitalization: TextCapitalization.characters,
+            ),
+            VenderTextInput(
+              label: 'Numero',
+              controller: _number,
+              requiredField: true,
+            ),
           ],
         ),
-        const SizedBox(height: 10),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
+        VenderYesNoSelector(
+          title: 'Sur',
           value: _south,
           onChanged: (value) => controller.setSouth(kind, value),
-          title: const Text('Sur'),
         ),
-        const SizedBox(height: 4),
         VenderResponsiveRow(
           children: [
             VenderCatalogDropdown(
@@ -123,37 +133,49 @@ class VenderPersonView extends StatelessWidget {
               options: catalogs.propertyTypes,
               value: _propertyType,
               onChanged: (value) => controller.setPropertyType(kind, value),
+              requiredField: true,
             ),
-            VenderTextInput(label: 'Complemento', controller: _complement),
-            VenderTextInput(label: 'Barrio', controller: _neighborhood),
+            VenderTextInput(
+              label: 'Complemento',
+              controller: _complement,
+              textCapitalization: TextCapitalization.characters,
+            ),
+            VenderTextInput(
+              label: 'Barrio',
+              controller: _neighborhood,
+              textCapitalization: TextCapitalization.characters,
+            ),
           ],
         ),
-        const SizedBox(height: 14),
-        VenderTextInput(label: 'Direccion', controller: _address, maxLines: 2),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
+        VenderTextInput(
+          label: 'Direccion',
+          controller: _address,
+          maxLines: 2,
+          requiredField: true,
+          textCapitalization: TextCapitalization.characters,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: VenderNativeButton(
+            label: 'Georreferenciar',
+            fullWidth: true,
+            icon: const Icon(Icons.my_location),
             onPressed: controller.busyRemote
                 ? null
                 : () => runAction(() => controller.geocodePerson(kind)),
-            icon: const Icon(Icons.my_location),
-            label: const Text('Georreferenciar'),
           ),
         ),
-        const SizedBox(height: 14),
         VenderTextInput(
           label: 'Email',
           controller: _email,
           keyboardType: TextInputType.emailAddress,
         ),
-        const SizedBox(height: 10),
-        SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
+        VenderYesNoSelector(
+          title: 'Enviar notificacion',
           value: _notification,
           onChanged: (value) => controller.setNotification(kind, value),
-          title: const Text('Enviar notificacion'),
         ),
+        const SizedBox(height: 20),
       ],
     );
   }

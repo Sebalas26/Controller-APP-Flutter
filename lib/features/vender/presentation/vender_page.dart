@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/network/controller_api_config.dart';
+import '../../../shared/theme/app_colors.dart';
 import '../../login/login.dart';
 import 'controllers/vender_flow_controller.dart';
 import 'views/vender_admission_success_view.dart';
@@ -29,17 +30,6 @@ class VenderPage extends StatefulWidget {
 }
 
 class _VenderPageState extends State<VenderPage> {
-  static const _steps = [
-    VenderStepItem(Icons.inventory_2_outlined, 'Datos envio'),
-    VenderStepItem(Icons.request_quote_outlined, 'Liquidacion'),
-    VenderStepItem(Icons.person_outline, 'Remitente'),
-    VenderStepItem(Icons.location_on_outlined, 'Destinatario'),
-    VenderStepItem(Icons.fact_check_outlined, 'Resumen'),
-    VenderStepItem(Icons.check_circle_outline, 'Admitido'),
-    VenderStepItem(Icons.receipt_long_outlined, 'Facturar'),
-    VenderStepItem(Icons.payments_outlined, 'Cobrar'),
-  ];
-
   late final VenderFlowController _controller;
 
   @override
@@ -68,49 +58,74 @@ class _VenderPageState extends State<VenderPage> {
   @override
   Widget build(BuildContext context) {
     if (_controller.loading) {
-      return const VenderPanel(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Center(child: CircularProgressIndicator()),
-        ),
+      return _VenderNativeScaffold(
+        title: _titleForStep(),
+        onBack: _goBack,
+        body: const Center(child: CircularProgressIndicator()),
+        footer: const SizedBox.shrink(),
       );
     }
 
     if (!_controller.hasCatalogs) {
-      return VenderPanel(
-        child: VenderEmptyState(
+      return _VenderNativeScaffold(
+        title: _titleForStep(),
+        onBack: _goBack,
+        body: VenderEmptyState(
           icon: Icons.storage_outlined,
           title: 'Vender sin catalogos',
           message:
               _controller.errorMessage ??
               'Ejecuta la sincronizacion inicial para cargar datos locales.',
         ),
+        footer: const SizedBox.shrink(),
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _VenderStatus(controller: _controller),
-        const SizedBox(height: 12),
-        VenderStatusBanner(
-          message: _controller.statusMessage,
-          error: _controller.errorMessage,
-          loading: _controller.busyRemote || _controller.saving,
-        ),
-        const SizedBox(height: 12),
-        VenderStepRail(
-          steps: _steps,
-          currentStep: _controller.currentStep,
-          highestStep: _controller.highestStep,
-          onTap: _controller.setStep,
-        ),
-        const SizedBox(height: 12),
-        VenderPanel(child: _bodyForStep()),
-        const SizedBox(height: 12),
-        _footer(),
-      ],
+    return _VenderNativeScaffold(
+      title: _titleForStep(),
+      onBack: _goBack,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          VenderStatusBanner(
+            message: _controller.statusMessage,
+            error: _controller.errorMessage,
+            loading: _controller.busyRemote || _controller.saving,
+          ),
+          _bodyForStep(),
+        ],
+      ),
+      footer: _footer(),
     );
+  }
+
+  void _goBack() {
+    if (_controller.currentStep == 0 || _controller.currentStep >= 5) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    _controller.previousStep();
+  }
+
+  String _titleForStep() {
+    switch (_controller.currentStep) {
+      case 0:
+        return 'Datos Envio';
+      case 1:
+        return 'Confirmar Liquidacion';
+      case 2:
+        return 'Datos Remitente';
+      case 3:
+        return 'Datos Destinatario';
+      case 4:
+        return 'Resumen Admision';
+      case 5:
+        return 'Envio Admitido';
+      case 6:
+        return 'Facturar';
+      default:
+        return 'Cobrar';
+    }
   }
 
   Widget _bodyForStep() {
@@ -155,31 +170,48 @@ class _VenderPageState extends State<VenderPage> {
   }
 
   Widget _footer() {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed:
-                _controller.currentStep == 0 ||
-                    _controller.currentStep >= 5 ||
-                    _controller.saving
-                ? null
-                : _controller.previousStep,
-            icon: const Icon(Icons.arrow_back),
-            label: const Text('Atras'),
+    final showBack = _controller.currentStep > 0 && _controller.currentStep < 5;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.black.withValues(alpha: 0.16),
+            offset: const Offset(0, -4),
+            blurRadius: 16,
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Row(
+            children: [
+              if (showBack) ...[
+                Expanded(
+                  child: _NativeFooterButton(
+                    label: 'Atras',
+                    onPressed: _controller.saving
+                        ? null
+                        : _controller.previousStep,
+                  ),
+                ),
+                const SizedBox(width: 16),
+              ],
+              Expanded(
+                child: _NativeFooterButton(
+                  label: _footerLabel(),
+                  icon: _footerIcon(),
+                  onPressed: _controller.saving
+                      ? null
+                      : () => _runAction(_controller.nextStep),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: FilledButton.icon(
-            onPressed: _controller.saving
-                ? null
-                : () => _runAction(_controller.nextStep),
-            icon: Icon(_footerIcon()),
-            label: Text(_footerLabel()),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -187,7 +219,7 @@ class _VenderPageState extends State<VenderPage> {
     if (_controller.currentStep == 4) return 'Guardar admision';
     if (_controller.currentStep == 5) return 'No agregar mas envios';
     if (_controller.currentStep == 6) return 'Facturar';
-    if (_controller.currentStep == _steps.length - 1) {
+    if (_controller.currentStep == 7) {
       if (_controller.collectionState?.confirmed == true) return 'Nueva venta';
       return _controller.collectionState?.actionLabel ?? 'Confirmar cobro';
     }
@@ -198,7 +230,7 @@ class _VenderPageState extends State<VenderPage> {
     if (_controller.currentStep == 4) return Icons.save_outlined;
     if (_controller.currentStep == 5) return Icons.receipt_long_outlined;
     if (_controller.currentStep == 6) return Icons.receipt_long;
-    if (_controller.currentStep == _steps.length - 1) {
+    if (_controller.currentStep == 7) {
       return _controller.collectionState?.confirmed == true
           ? Icons.add
           : Icons.payments_outlined;
@@ -221,39 +253,111 @@ class _VenderPageState extends State<VenderPage> {
   }
 }
 
-class _VenderStatus extends StatelessWidget {
-  const _VenderStatus({required this.controller});
+class _VenderNativeScaffold extends StatefulWidget {
+  const _VenderNativeScaffold({
+    required this.title,
+    required this.onBack,
+    required this.body,
+    required this.footer,
+  });
 
-  final VenderFlowController controller;
+  final String title;
+  final VoidCallback onBack;
+  final Widget body;
+  final Widget footer;
+
+  @override
+  State<_VenderNativeScaffold> createState() => _VenderNativeScaffoldState();
+}
+
+class _VenderNativeScaffoldState extends State<_VenderNativeScaffold> {
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollDown() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOut,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final catalogs = controller.catalogs;
-    return VenderPanel(
-      child: Wrap(
-        spacing: 10,
-        runSpacing: 10,
+    return ColoredBox(
+      color: AppColors.black,
+      child: Column(
         children: [
-          _StatusChip(
-            icon: controller.offline ? Icons.wifi_off : Icons.wifi,
-            label: controller.offline ? 'Offline' : 'Online',
+          _VenderNativeToolbar(
+            title: widget.title,
+            onBack: widget.onBack,
+            onScrollDown: _scrollDown,
           ),
-          _StatusChip(
-            icon: Icons.price_change_outlined,
-            label:
-                'Lista ${controller.priceListId == 0 ? '-' : controller.priceListId}',
+          Expanded(
+            child: ColoredBox(
+              color: AppColors.white,
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                child: widget.body,
+              ),
+            ),
           ),
-          _StatusChip(
-            icon: Icons.inventory_2_outlined,
-            label: 'Suministros ${catalogs?.availableSupplies ?? 0}',
+          widget.footer,
+        ],
+      ),
+    );
+  }
+}
+
+class _VenderNativeToolbar extends StatelessWidget {
+  const _VenderNativeToolbar({
+    required this.title,
+    required this.onBack,
+    required this.onScrollDown,
+  });
+
+  final String title;
+  final VoidCallback onBack;
+  final VoidCallback onScrollDown;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.black,
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onBack,
+            icon: const Icon(Icons.arrow_back, color: AppColors.white),
+            tooltip: 'Atras',
           ),
-          _StatusChip(
-            icon: Icons.pending_actions_outlined,
-            label: 'Pendientes ${catalogs?.pendingOfflineAdmissions ?? 0}',
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.white,
+                fontFamily: 'Montserrat',
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
-          _StatusChip(
-            icon: Icons.location_city_outlined,
-            label: controller.appInformation.nombreCentroServicio,
+          IconButton(
+            onPressed: onScrollDown,
+            icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.white),
+            tooltip: 'Bajar',
           ),
         ],
       ),
@@ -261,18 +365,36 @@ class _VenderStatus extends StatelessWidget {
   }
 }
 
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.icon, required this.label});
+class _NativeFooterButton extends StatelessWidget {
+  const _NativeFooterButton({
+    required this.label,
+    required this.onPressed,
+    this.icon,
+  });
 
-  final IconData icon;
   final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
-    return Chip(
-      avatar: Icon(icon, size: 18),
-      label: Text(label),
-      visualDensity: VisualDensity.compact,
+    return FilledButton.icon(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.black,
+        foregroundColor: AppColors.white,
+        disabledBackgroundColor: AppColors.gray200,
+        disabledForegroundColor: AppColors.gray500,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+        textStyle: const TextStyle(
+          fontFamily: 'Montserrat',
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      icon: Icon(icon ?? Icons.chevron_right),
+      label: Text(label, textAlign: TextAlign.center),
     );
   }
 }

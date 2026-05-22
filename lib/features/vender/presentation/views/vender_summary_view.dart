@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/theme/app_colors.dart';
 import '../controllers/vender_flow_controller.dart';
 import '../widgets/vender_form_widgets.dart';
 
@@ -20,75 +21,91 @@ class VenderSummaryView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const VenderSectionTitle(
-          icon: Icons.fact_check_outlined,
-          title: 'Resumen admision',
-          subtitle: 'Registro local listo para sincronizacion offline',
-        ),
         const SizedBox(height: 16),
-        _SummaryRow('Origen', controller.appInformation.nombreCiudad),
-        _SummaryRow('Destino', controller.destinationCity?.label ?? ''),
-        _SummaryRow('Entrega', controller.deliveryType?.label ?? ''),
-        _SummaryRow('Peso final', controller.finalWeight.toStringAsFixed(2)),
-        _SummaryRow(
-          'Valor comercial',
-          controller.commercialValue.toStringAsFixed(0),
-        ),
-        _SummaryRow('Servicio', quote?.name ?? ''),
-        _SummaryRow('Total', quote?.totalValue.toStringAsFixed(0) ?? ''),
-        const Divider(height: 28),
-        _SummaryRow('Remitente', _person(controller, true)),
-        _SummaryRow('Direccion remitente', controller.senderAddress.text),
-        _SummaryRow('Destinatario', _person(controller, false)),
-        _SummaryRow('Direccion destinatario', controller.recipientAddress.text),
-        const SizedBox(height: 16),
-        if (catalogs != null)
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: const Color(0xFFF9F9F9),
-              borderRadius: BorderRadius.circular(8),
+        _NativeSummaryBlock(
+          title: 'Datos del envio',
+          rows: [
+            _SummaryData('Origen', controller.appInformation.nombreCiudad),
+            _SummaryData('Destino', controller.destinationCity?.label ?? ''),
+            _SummaryData('Entrega', controller.deliveryType?.label ?? ''),
+            _SummaryData(
+              'Peso final',
+              controller.finalWeight.toStringAsFixed(2),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Suministros offline',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 6),
-                  Text('Disponibles: ${catalogs.availableSupplies}'),
-                  Text('Usados: ${catalogs.usedSupplies}'),
-                  Text(
-                    'Admisiones pendientes: ${catalogs.pendingOfflineAdmissions}',
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: controller.busyRemote
-                            ? null
-                            : () => runAction(controller.refreshSupplies),
-                        icon: const Icon(Icons.sync),
-                        label: const Text('Recargar suministros'),
+            _SummaryData(
+              'Valor comercial',
+              controller.commercialValue.toStringAsFixed(0),
+            ),
+            _SummaryData('Servicio', quote?.name ?? ''),
+            _SummaryData('Total', quote?.totalValue.toStringAsFixed(0) ?? ''),
+          ],
+        ),
+        _NativeSummaryBlock(
+          title: 'Remitente',
+          rows: [
+            _SummaryData('Nombre', _person(controller, true)),
+            _SummaryData('Direccion', controller.senderAddress.text),
+          ],
+        ),
+        _NativeSummaryBlock(
+          title: 'Destinatario',
+          rows: [
+            _SummaryData('Nombre', _person(controller, false)),
+            _SummaryData('Direccion', controller.recipientAddress.text),
+          ],
+        ),
+        if (catalogs != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.gray100,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.gray200),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Suministros offline',
+                      style: TextStyle(
+                        color: AppColors.black,
+                        fontFamily: 'Montserrat',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                       ),
-                      OutlinedButton.icon(
-                        onPressed:
-                            controller.busyRemote ||
-                                catalogs.pendingOfflineAdmissions == 0
-                            ? null
-                            : () => runAction(
-                                controller.synchronizeOfflineAdmissions,
-                              ),
-                        icon: const Icon(Icons.cloud_upload_outlined),
-                        label: const Text('Sincronizar admisiones'),
-                      ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 8),
+                    _SupplyLine('Disponibles', catalogs.availableSupplies),
+                    _SupplyLine('Usados', catalogs.usedSupplies),
+                    _SupplyLine(
+                      'Admisiones pendientes',
+                      catalogs.pendingOfflineAdmissions,
+                    ),
+                    const SizedBox(height: 12),
+                    VenderNativeButton(
+                      label: 'Recargar suministros',
+                      fullWidth: true,
+                      icon: const Icon(Icons.sync),
+                      onPressed: controller.busyRemote
+                          ? null
+                          : () => runAction(controller.refreshSupplies),
+                    ),
+                    const SizedBox(height: 8),
+                    VenderNativeButton(
+                      label: 'Sincronizar admisiones',
+                      fullWidth: true,
+                      icon: const Icon(Icons.cloud_upload_outlined),
+                      enabled:
+                          !controller.busyRemote &&
+                          catalogs.pendingOfflineAdmissions > 0,
+                      onPressed: () =>
+                          runAction(controller.synchronizeOfflineAdmissions),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -110,6 +127,55 @@ class VenderSummaryView extends StatelessWidget {
   }
 }
 
+class _NativeSummaryBlock extends StatelessWidget {
+  const _NativeSummaryBlock({required this.title, required this.rows});
+
+  final String title;
+  final List<_SummaryData> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.black,
+              fontFamily: 'Montserrat',
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          DecoratedBox(
+            decoration: const BoxDecoration(
+              border: Border(
+                top: BorderSide(color: AppColors.black),
+                bottom: BorderSide(color: AppColors.black),
+              ),
+            ),
+            child: Column(
+              children: [
+                for (final row in rows) _SummaryRow(row.label, row.value),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryData {
+  const _SummaryData(this.label, this.value);
+
+  final String label;
+  final String value;
+}
+
 class _SummaryRow extends StatelessWidget {
   const _SummaryRow(this.label, this.value);
 
@@ -119,24 +185,64 @@ class _SummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 145,
+            width: 132,
             child: Text(
               label,
               style: const TextStyle(
-                color: Color(0xFF696F79),
-                fontWeight: FontWeight.w700,
+                color: AppColors.black,
+                fontFamily: 'Prospero',
+                fontSize: 14,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value.trim().isEmpty ? '-' : value,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                color: AppColors.black,
+                fontFamily: 'Prospero',
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SupplyLine extends StatelessWidget {
+  const _SupplyLine(this.label, this.value);
+
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.black,
+                fontFamily: 'Montserrat',
+              ),
+            ),
+          ),
+          Text(
+            '$value',
+            style: const TextStyle(
+              color: AppColors.black,
+              fontFamily: 'Montserrat',
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],

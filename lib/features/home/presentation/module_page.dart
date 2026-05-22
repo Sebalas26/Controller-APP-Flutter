@@ -22,6 +22,18 @@ class ModulePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (module.id == 'vender') {
+      return Scaffold(
+        body: SafeArea(
+          child: VenderPage(
+            appInformation: session.appInformation,
+            apiConfig: config.toApiConfig(),
+            offline: session.offline,
+          ),
+        ),
+      );
+    }
+
     if (module.id == 'entregar') {
       return Scaffold(
         body: SafeArea(
