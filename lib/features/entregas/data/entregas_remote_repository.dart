@@ -172,14 +172,21 @@ class EntregasRemoteRepository {
     required EntregaPendingDownload download,
   }) async {
     final token = await _deliveryProofToken(config);
-    final client = _plainClient(config.deliveryProofBaseUrl);
+    final payload = jsonEncode(download.payload);
+    final client = _deliveryProofClient(config.deliveryProofBaseUrl);
     final response = await client.post<dynamic>(
       'descarguemensajeroapp',
-      data: download.payload,
+      data: payload,
       options: Options(
         validateStatus: (status) => status != null && status < 600,
-        headers: _proofHeaders(token, appInformation),
+        headers: _proofHeaders(
+          token,
+          appInformation,
+          config.deliveryProofBaseUrl,
+          payload,
+        ),
         preserveHeaderCase: true,
+        contentType: null,
       ),
     );
     return _syncResult(response, 'No fue posible registrar prueba de entrega.');
@@ -235,21 +242,46 @@ class EntregasRemoteRepository {
         receiveTimeout: const Duration(seconds: 60),
         sendTimeout: const Duration(seconds: 30),
         headers: headers,
+        preserveHeaderCase: true,
       ),
     );
     client.httpClientAdapter = _dio.httpClientAdapter;
     return client;
   }
 
+  Dio _deliveryProofClient(String baseUrl) {
+    final client = _plainClient(baseUrl);
+    client.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          options.preserveHeaderCase = true;
+          final headers = _canonicalProofHeaders(options.headers);
+          options.headers
+            ..clear()
+            ..addAll(headers);
+          handler.next(options);
+        },
+      ),
+    );
+    return client;
+  }
+
   Map<String, Object> _proofHeaders(
     String token,
     AppInformation appInformation,
+    String baseUrl,
+    String payload,
   ) {
+    final host = _hostHeader(baseUrl);
     return {
       'Usuario': appInformation.idUsuario,
       'Identificacion': appInformation.identificacionUsuario,
       'NombreMensajero': appInformation.nombreMensajero,
+      'User-Agent': 'ControllerAppFlutter',
+      if (host.isNotEmpty) 'Host': host,
       'Accept': 'text/json',
+      'Accept-Encoding': 'gzip',
+      'Connection': 'Keep-Alive',
       'IdUsuario': appInformation.idUsuario,
       'IdCentroServicio': appInformation.idCentroServicio,
       'NombreCentroServicio': _sanitizeHeaderValue(
@@ -258,7 +290,54 @@ class EntregasRemoteRepository {
       'Token': token,
       'IdAplicativoOrigen': '9',
       'Content-Type': 'application/json',
+      'Content-Length': utf8.encode(payload).length.toString(),
     };
+  }
+
+  Map<String, Object?> _canonicalProofHeaders(Map<String, dynamic> headers) {
+    final result = <String, Object?>{};
+    for (final entry in headers.entries) {
+      if (entry.value == null) continue;
+      result[_canonicalProofHeaderName(entry.key)] = entry.value;
+    }
+    return result;
+  }
+
+  String _canonicalProofHeaderName(String name) {
+    switch (name.toLowerCase()) {
+      case 'accept':
+        return 'Accept';
+      case 'accept-encoding':
+        return 'Accept-Encoding';
+      case 'connection':
+        return 'Connection';
+      case 'content-length':
+        return 'Content-Length';
+      case 'content-type':
+        return 'Content-Type';
+      case 'host':
+        return 'Host';
+      case 'idaplicativoorigen':
+        return 'IdAplicativoOrigen';
+      case 'idcentroservicio':
+        return 'IdCentroServicio';
+      case 'identificacion':
+        return 'Identificacion';
+      case 'idusuario':
+        return 'IdUsuario';
+      case 'nombrecentroservicio':
+        return 'NombreCentroServicio';
+      case 'nombremensajero':
+        return 'NombreMensajero';
+      case 'token':
+        return 'Token';
+      case 'user-agent':
+        return 'User-Agent';
+      case 'usuario':
+        return 'Usuario';
+      default:
+        return name;
+    }
   }
 
   Map<String, Object> _guideRequest(
@@ -357,6 +436,23 @@ class EntregasRemoteRepository {
       if (!isControl && codeUnit < 0x7f) buffer.writeCharCode(codeUnit);
     }
     return buffer.toString();
+  }
+
+  String _hostHeader(String baseUrl) {
+    final normalized = baseUrl.trim();
+    if (normalized.isEmpty) return '';
+    var parsed = Uri.tryParse(normalized);
+    if (parsed == null || parsed.host.isEmpty) {
+      parsed = Uri.tryParse('https://$normalized');
+    }
+    if (parsed == null || parsed.host.isEmpty) return '';
+    if (!parsed.hasPort || _isDefaultPort(parsed)) return parsed.host;
+    return '${parsed.host}:${parsed.port}';
+  }
+
+  bool _isDefaultPort(Uri uri) {
+    return (uri.scheme == 'https' && uri.port == 443) ||
+        (uri.scheme == 'http' && uri.port == 80);
   }
 
   bool _isPendingDelivery(EntregaGuide guide) => guide.isPendingDelivery;
