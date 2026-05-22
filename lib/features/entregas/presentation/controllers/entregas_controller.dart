@@ -530,7 +530,7 @@ class EntregasController extends ChangeNotifier {
       'RecibidoGuia': isReturn
           ? null
           : {
-              'EstadoRegistro': 'A',
+              'EstadoRegistro': 'ADICIONADO',
               'IdAplicacionOrigen': 'PAM',
               'Identificacion': recipient.numericDocument,
               'NumeroGuia': guideNumber,
