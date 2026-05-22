@@ -195,7 +195,7 @@ class EntregasController extends ChangeNotifier {
     statusMessage = 'Consultando guia $guide.';
     notifyListeners();
     try {
-      searchedGuide = await localRepository.findGuide(guide);
+      searchedGuide = await localRepository.findGuide(guide, pendingOnly: true);
       if (searchedGuide == null && !offline) {
         searchedGuide = await remoteRepository.searchGuide(
           config: apiConfig,
@@ -204,6 +204,12 @@ class EntregasController extends ChangeNotifier {
         );
         final found = searchedGuide;
         if (found != null) {
+          if (!found.isPendingDelivery) {
+            searchedGuide = null;
+            throw EntregaException(
+              'La guia $guide no esta pendiente para entregar.',
+            );
+          }
           await localRepository.saveGuides([found], EntregaGuideStatus.enZona);
           await _loadLocal();
         }

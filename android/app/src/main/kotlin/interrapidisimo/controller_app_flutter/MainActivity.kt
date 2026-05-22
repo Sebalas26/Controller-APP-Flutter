@@ -13,6 +13,7 @@ import android.provider.MediaStore
 import android.util.Base64
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.zxing.integration.android.IntentIntegrator
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodCall
@@ -22,6 +23,7 @@ import kotlin.math.roundToInt
 
 class MainActivity : FlutterActivity() {
     private var pendingPhotoResult: MethodChannel.Result? = null
+    private var pendingQrResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -37,6 +39,7 @@ class MainActivity : FlutterActivity() {
                 "getAesKeySecret" -> result.success(BuildConfig.ENCRYPT_AES256_KEY_SECRET)
                 "getAesSaltSecret" -> result.success(BuildConfig.ENCRYPT_AES256_SALT_SECRET)
                 "takePackagePhoto" -> takePackagePhoto(result)
+                "scanQrCode" -> scanQrCode(result)
                 "compressImageBase64ToJpeg" -> compressImageBase64ToJpeg(call, result)
                 else -> result.notImplemented()
             }
@@ -46,44 +49,16 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_PACKAGE_PHOTO) return
-        
-        val pending = pendingPhotoResult
-        pendingPhotoResult = null
-        
-        if (pending == null) return
+        if (requestCode == REQUEST_PACKAGE_PHOTO) {
+            handlePackagePhotoResult(resultCode, data)
+            return
+        }
 
-        try {
-            if (resultCode != Activity.RESULT_OK) {
-                pending.success("")
-                return
-            }
-
-            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                data?.extras?.getParcelable("data", Bitmap::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                data?.extras?.getParcelable("data") as? Bitmap
-            }
-
-            if (bitmap == null) {
-                pending.success("")
-                return
-            }
-
-            val jpegBase64 = bitmapToJpegBase64(
-                bitmap,
-                PHOTO_MAX_DIMENSION,
-                PHOTO_JPEG_QUALITY,
-                PHOTO_MAX_BASE64_LENGTH
-            )
-            pending.success(jpegBase64)
-        } catch (e: Exception) {
-            try {
-                pending.success("")
-            } catch (e2: Exception) {
-                // Result already consumed
-            }
+        val scanResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
+        if (scanResult != null) {
+            val pending = pendingQrResult
+            pendingQrResult = null
+            pending?.success(scanResult.contents.orEmpty())
         }
     }
 
@@ -145,6 +120,76 @@ class MainActivity : FlutterActivity() {
             pendingPhotoResult = null
             try {
                 result.error("CAMERA_ERROR", e.message ?: "Error al abrir cámara", null)
+            } catch (e2: Exception) {
+                // Result already consumed
+            }
+        }
+    }
+
+    private fun scanQrCode(result: MethodChannel.Result) {
+        try {
+            if (pendingQrResult != null || pendingPhotoResult != null) {
+                result.error("CAMERA_BUSY", "Ya hay una captura en proceso.", null)
+                return
+            }
+            if (!packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)) {
+                result.success("")
+                return
+            }
+            pendingQrResult = result
+            IntentIntegrator(this).apply {
+                setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES)
+                setPrompt("Escanea la guia")
+                setCameraId(0)
+                setBeepEnabled(true)
+                setBarcodeImageEnabled(false)
+                setOrientationLocked(false)
+                initiateScan()
+            }
+        } catch (e: Exception) {
+            pendingQrResult = null
+            try {
+                result.error("QR_SCAN_ERROR", e.message ?: "Error al iniciar escaner", null)
+            } catch (e2: Exception) {
+                // Result already consumed
+            }
+        }
+    }
+
+    private fun handlePackagePhotoResult(resultCode: Int, data: Intent?) {
+        val pending = pendingPhotoResult
+        pendingPhotoResult = null
+
+        if (pending == null) return
+
+        try {
+            if (resultCode != Activity.RESULT_OK) {
+                pending.success("")
+                return
+            }
+
+            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                data?.extras?.getParcelable("data", Bitmap::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                data?.extras?.getParcelable("data") as? Bitmap
+            }
+
+            if (bitmap == null) {
+                pending.success("")
+                return
+            }
+
+            val jpegBase64 = bitmapToJpegBase64(
+                bitmap,
+                PHOTO_MAX_DIMENSION,
+                PHOTO_JPEG_QUALITY,
+                PHOTO_MAX_BASE64_LENGTH
+            )
+            pending.success(jpegBase64)
+        } catch (e: Exception) {
+            try {
+                pending.success("")
             } catch (e2: Exception) {
                 // Result already consumed
             }

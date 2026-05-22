@@ -47,6 +47,9 @@ class EntregaGuide {
     required this.addressGeneralId,
   });
 
+  static const estadoNoEntregada = 7;
+  static const estadoEntregada = 11;
+
   final Map<String, dynamic> raw;
   final String guideNumber;
   final int stateId;
@@ -77,6 +80,21 @@ class EntregaGuide {
     if (!paid) total += valueGuide;
     if (!contraPaymentPaid) total += valueContraPayment;
     return total.round();
+  }
+
+  bool get isPendingDelivery {
+    if (stateId == estadoEntregada || stateId == estadoNoEntregada) {
+      return false;
+    }
+    final normalizedState = stateName.trim().toUpperCase();
+    if (normalizedState.contains('ENTREGADA') ||
+        normalizedState.contains('NO ENTREGADA') ||
+        normalizedState.contains('INTENTO') ||
+        normalizedState.contains('DEVOLUCION') ||
+        normalizedState.contains('DEVUELT')) {
+      return false;
+    }
+    return true;
   }
 
   String get displayState {

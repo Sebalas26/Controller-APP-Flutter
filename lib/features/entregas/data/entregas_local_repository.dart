@@ -8,8 +8,8 @@ import '../models/entregas_models.dart';
 class EntregasLocalRepository {
   static const _estadoNoSincronizado = 0;
   static const _estadoSincronizado = 1;
-  static const _estadoEntregada = 13;
-  static const _estadoDevolucion = 7;
+  static const _estadoEntregada = EntregaGuide.estadoEntregada;
+  static const _estadoDevolucion = EntregaGuide.estadoNoEntregada;
 
   Future<Database> _openDatabase() async {
     final dbPath = await getDatabasesPath();
@@ -33,7 +33,8 @@ class EntregasLocalRepository {
     final guides = <String, EntregaGuide>{};
     for (final row in rows) {
       final guide = EntregaGuide.fromJson(_decodeMap(row['guide_json']));
-      if (guide.guideNumber.trim().isNotEmpty) {
+      if (guide.guideNumber.trim().isNotEmpty &&
+          _matchesStatus(status, guide)) {
         guides[guide.guideNumber] = guide;
       }
     }
@@ -41,7 +42,10 @@ class EntregasLocalRepository {
     return guides.values.toList();
   }
 
-  Future<EntregaGuide?> findGuide(String guideNumber) async {
+  Future<EntregaGuide?> findGuide(
+    String guideNumber, {
+    bool pendingOnly = false,
+  }) async {
     final guide = guideNumber.trim();
     if (guide.isEmpty) return null;
     final db = await _openDatabase();
@@ -50,10 +54,15 @@ class EntregasLocalRepository {
       'entregas_guias_cache',
       where: 'numero_guia = ?',
       whereArgs: [guide],
-      limit: 1,
+      orderBy: "CASE WHEN status = 'en_zona' THEN 0 ELSE 1 END",
     );
-    if (rows.isEmpty) return null;
-    return EntregaGuide.fromJson(_decodeMap(rows.first['guide_json']));
+    for (final row in rows) {
+      final found = EntregaGuide.fromJson(_decodeMap(row['guide_json']));
+      if (!pendingOnly || _matchesStatus(EntregaGuideStatus.enZona, found)) {
+        return found;
+      }
+    }
+    return null;
   }
 
   Future<void> saveGuides(
@@ -503,7 +512,7 @@ CREATE TABLE IF NOT EXISTS DevolucionMotivoGuia_LOI (
       final rows = await db.query('GuiasPlanilladas_LO');
       for (final row in rows) {
         final guide = EntregaGuide.fromJson(_decodeMap(row['GP_Objeto']));
-        if (guide.guideNumber.trim().isNotEmpty) {
+        if (guide.guideNumber.trim().isNotEmpty && guide.isPendingDelivery) {
           guides.putIfAbsent(guide.guideNumber, () => guide);
         }
       }
@@ -531,6 +540,11 @@ CREATE TABLE IF NOT EXISTS DevolucionMotivoGuia_LOI (
         guides.putIfAbsent(guide.guideNumber, () => guide);
       }
     }
+  }
+
+  bool _matchesStatus(EntregaGuideStatus status, EntregaGuide guide) {
+    if (status == EntregaGuideStatus.enZona) return guide.isPendingDelivery;
+    return true;
   }
 
   String _motivoText(Object? value) {

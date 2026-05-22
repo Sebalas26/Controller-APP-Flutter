@@ -64,6 +64,16 @@ class ControllerNativeBridge {
     }
   }
 
+  Future<String> scanQrCode() async {
+    try {
+      return await _channel.invokeMethod<String>('scanQrCode') ?? '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
+
   Future<String> compressImageBase64ToJpeg(
     String imageBase64, {
     int maxDimension = 480,

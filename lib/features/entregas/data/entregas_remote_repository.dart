@@ -38,7 +38,7 @@ class EntregasRemoteRepository {
     final response = await client.get<dynamic>(
       'OperacionUrbanaController/ObtenerGuiasMensajeroEnZona/${Uri.encodeComponent(messengerId)}',
     );
-    return _guideList(response.data);
+    return _guideList(response.data).where(_isPendingDelivery).toList();
   }
 
   Future<List<EntregaGuide>> fetchDelivered({
@@ -179,13 +179,20 @@ class EntregasRemoteRepository {
       options: Options(
         validateStatus: (status) => status != null && status < 600,
         headers: _proofHeaders(token, appInformation),
+        preserveHeaderCase: true,
       ),
     );
     return _syncResult(response, 'No fue posible registrar prueba de entrega.');
   }
 
   Future<String> _deliveryProofToken(ControllerApiConfig config) async {
-    final client = _plainClient(config.deliveryProofTokenBaseUrl);
+    final client = _plainClient(
+      config.deliveryProofTokenBaseUrl,
+      headers: const {
+        'Content-Type': 'application/json',
+        'Accept': 'text/json',
+      },
+    );
     final response = await client.post<dynamic>(
       'Autorizador',
       data: {'Usuario': _proofUser, 'Password': _proofPassword},
@@ -219,7 +226,7 @@ class EntregasRemoteRepository {
     );
   }
 
-  Dio _plainClient(String baseUrl) {
+  Dio _plainClient(String baseUrl, {Map<String, Object>? headers}) {
     final normalized = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
     final client = Dio(
       BaseOptions(
@@ -227,10 +234,7 @@ class EntregasRemoteRepository {
         connectTimeout: const Duration(seconds: 30),
         receiveTimeout: const Duration(seconds: 60),
         sendTimeout: const Duration(seconds: 30),
-        headers: const {
-          'Content-Type': 'application/json',
-          'Accept': 'text/json',
-        },
+        headers: headers,
       ),
     );
     client.httpClientAdapter = _dio.httpClientAdapter;
@@ -243,17 +247,17 @@ class EntregasRemoteRepository {
   ) {
     return {
       'Usuario': appInformation.idUsuario,
+      'Identificacion': appInformation.identificacionUsuario,
+      'NombreMensajero': appInformation.nombreMensajero,
+      'Accept': 'text/json',
       'IdUsuario': appInformation.idUsuario,
       'IdCentroServicio': appInformation.idCentroServicio,
       'NombreCentroServicio': _sanitizeHeaderValue(
         appInformation.nombreCentroServicio,
       ),
-      'IdAplicativoOrigen': '9',
-      'NombreMensajero': appInformation.nombreMensajero,
-      'Identificacion': appInformation.identificacionUsuario,
       'Token': token,
+      'IdAplicativoOrigen': '9',
       'Content-Type': 'application/json',
-      'Accept': 'text/json',
     };
   }
 
@@ -354,4 +358,6 @@ class EntregasRemoteRepository {
     }
     return buffer.toString();
   }
+
+  bool _isPendingDelivery(EntregaGuide guide) => guide.isPendingDelivery;
 }

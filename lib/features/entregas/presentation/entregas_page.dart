@@ -304,34 +304,8 @@ class _EntregasPageState extends State<EntregasPage> {
   }
 
   Future<void> _openQrDialog() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('QR'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Guia'),
-            keyboardType: TextInputType.text,
-            onSubmitted: (value) => Navigator.of(context).pop(value),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(controller.text),
-              child: const Text('Consultar'),
-            ),
-          ],
-        );
-      },
-    );
-    controller.dispose();
-    if (result == null || result.trim().isEmpty) return;
+    final result = await _nativeBridge.scanQrCode();
+    if (result.trim().isEmpty) return;
     _searchController.text = result.replaceAll(RegExp(r'[^0-9]'), '');
     _lastSearchWasQr = true;
     await _run(() => _controller.searchGuide(result));

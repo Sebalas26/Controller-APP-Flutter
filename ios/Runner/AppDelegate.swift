@@ -1,10 +1,12 @@
 import Flutter
+import AVFoundation
 import UIKit
 import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
   private var pendingPhotoResult: FlutterResult?
+  private var pendingScanner: BarcodeScannerViewController?
 
   override func application(
     _ application: UIApplication,
@@ -27,6 +29,8 @@ import UserNotifications
           result("")
         case "takePackagePhoto":
           self?.takePackagePhoto(result: result)
+        case "scanQrCode":
+          self?.scanQrCode(result: result)
         case "compressImageBase64ToJpeg":
           self?.compressImageBase64ToJpeg(call: call, result: result)
         default:
@@ -78,6 +82,20 @@ import UserNotifications
     pendingPhotoResult = nil
     picker.dismiss(animated: true)
     result?("")
+  }
+
+  private func scanQrCode(result: @escaping FlutterResult) {
+    guard pendingPhotoResult == nil, pendingScanner == nil else {
+      result(FlutterError(code: "CAMERA_BUSY", message: "Ya hay una captura en proceso.", details: nil))
+      return
+    }
+    let scanner = BarcodeScannerViewController { [weak self] value in
+      self?.pendingScanner = nil
+      self?.window?.rootViewController?.dismiss(animated: true)
+      result(value)
+    }
+    pendingScanner = scanner
+    window?.rootViewController?.present(scanner, animated: true)
   }
 
   private func compressImageBase64ToJpeg(call: FlutterMethodCall, result: FlutterResult) {
@@ -195,4 +213,148 @@ import UserNotifications
   private let minJpegQuality = 8
   private let maxJpegQuality = 100
   private let jpegQualityStep = 7
+}
+
+private final class BarcodeScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+  private let completion: (String) -> Void
+  private let session = AVCaptureSession()
+  private var previewLayer: AVCaptureVideoPreviewLayer?
+  private var completed = false
+
+  init(completion: @escaping (String) -> Void) {
+    self.completion = completion
+    super.init(nibName: nil, bundle: nil)
+    modalPresentationStyle = .fullScreen
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    view.backgroundColor = .black
+    addCancelButton()
+    requestCameraAccess()
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    previewLayer?.frame = view.bounds
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    if !completed {
+      finish("")
+    }
+  }
+
+  private func requestCameraAccess() {
+    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    case .authorized:
+      configureSession()
+    case .notDetermined:
+      AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+        DispatchQueue.main.async {
+          granted ? self?.configureSession() : self?.finish("")
+        }
+      }
+    default:
+      finish("")
+    }
+  }
+
+  private func configureSession() {
+    guard let device = AVCaptureDevice.default(for: .video) else {
+      finish("")
+      return
+    }
+    do {
+      let input = try AVCaptureDeviceInput(device: device)
+      guard session.canAddInput(input) else {
+        finish("")
+        return
+      }
+      session.addInput(input)
+    } catch {
+      finish("")
+      return
+    }
+
+    let output = AVCaptureMetadataOutput()
+    guard session.canAddOutput(output) else {
+      finish("")
+      return
+    }
+    session.addOutput(output)
+    output.setMetadataObjectsDelegate(self, queue: .main)
+    output.metadataObjectTypes = availableMetadataTypes(from: output)
+
+    let layer = AVCaptureVideoPreviewLayer(session: session)
+    layer.frame = view.bounds
+    layer.videoGravity = .resizeAspectFill
+    previewLayer = layer
+    view.layer.insertSublayer(layer, at: 0)
+
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      self?.session.startRunning()
+    }
+  }
+
+  private func availableMetadataTypes(from output: AVCaptureMetadataOutput) -> [AVMetadataObject.ObjectType] {
+    let preferred: [AVMetadataObject.ObjectType] = [
+      .qr,
+      .code128,
+      .code39,
+      .code93,
+      .ean13,
+      .ean8,
+      .upce,
+      .pdf417,
+      .dataMatrix,
+    ]
+    return preferred.filter { output.availableMetadataObjectTypes.contains($0) }
+  }
+
+  private func addCancelButton() {
+    let button = UIButton(type: .system)
+    button.setTitle("Cancelar", for: .normal)
+    button.tintColor = .white
+    button.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+    button.layer.cornerRadius = 8
+    button.contentEdgeInsets = UIEdgeInsets(top: 10, left: 14, bottom: 10, right: 14)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.addTarget(self, action: #selector(cancelScan), for: .touchUpInside)
+    view.addSubview(button)
+    NSLayoutConstraint.activate([
+      button.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+      button.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+    ])
+  }
+
+  @objc private func cancelScan() {
+    finish("")
+  }
+
+  private func finish(_ value: String) {
+    guard !completed else {
+      return
+    }
+    completed = true
+    session.stopRunning()
+    completion(value)
+  }
+
+  func metadataOutput(
+    _ output: AVCaptureMetadataOutput,
+    didOutput metadataObjects: [AVMetadataObject],
+    from connection: AVCaptureConnection
+  ) {
+    guard let readable = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
+          let value = readable.stringValue else {
+      return
+    }
+    finish(value)
+  }
 }
