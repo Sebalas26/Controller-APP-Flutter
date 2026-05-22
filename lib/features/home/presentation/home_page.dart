@@ -81,14 +81,17 @@ class _HomePageState extends State<HomePage> {
     final functionalModules = appModules
         .where((item) => !item.primary)
         .toList();
-    final statusLabel = widget.session.offline
-        ? 'Offline'
-        : widget.session.syncStatus?.completed == true
-        ? 'Sync OK'
-        : widget.environment.label;
+    final footerUser = widget.session.username.trim().isNotEmpty
+        ? widget.session.username.trim().toUpperCase()
+        : widget.session.displayName.toUpperCase();
+    final footerText =
+        '$footerUser - ID ${widget.session.appInformation.idCentroServicio}'
+        ' - V ${AppStrings.appVersionName}'
+        ' - M${widget.session.appInformation.idMensajero}';
 
     return Scaffold(
       key: _scaffoldKey,
+      backgroundColor: AppColors.white,
       drawer: AppNavigationDrawer(
         session: widget.session,
         environment: widget.environment,
@@ -105,10 +108,11 @@ class _HomePageState extends State<HomePage> {
                   MaterialPageRoute(builder: (_) => const NotificationsPage()),
                 );
               },
+              offline: widget.session.offline,
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.only(bottom: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -119,43 +123,16 @@ class _HomePageState extends State<HomePage> {
                         onSubmit: _launchTracking,
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    const SectionTitle(
-                      icon: Icons.check_circle_outline,
-                      text: 'Principales',
+                    const SizedBox(height: 16),
+                    const SectionTitle(icon: Icons.check, text: 'Principales'),
+                    PrimaryModulesLayout(
+                      modules: primaryModules,
+                      onSelected: _openModule,
                     ),
+                    const SizedBox(height: 5),
+                    const SectionTitle(icon: Icons.add, text: 'Funciones'),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
-                      child: GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: primaryModules.length,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                              childAspectRatio: 1.05,
-                            ),
-                        itemBuilder: (context, index) {
-                          final module = primaryModules[index];
-                          return ModuleCard(
-                            module: module,
-                            large: true,
-                            onTap: () => _openModule(module),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    HomeBanner(environment: widget.environment),
-                    const SizedBox(height: 18),
-                    const SectionTitle(
-                      icon: Icons.more_horiz,
-                      text: 'Funcionales',
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      padding: const EdgeInsets.symmetric(horizontal: 17),
                       child: GridView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -163,9 +140,7 @@ class _HomePageState extends State<HomePage> {
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 3,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                              childAspectRatio: 0.95,
+                              mainAxisExtent: 85,
                             ),
                         itemBuilder: (context, index) {
                           final module = functionalModules[index];
@@ -176,14 +151,13 @@ class _HomePageState extends State<HomePage> {
                         },
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    HomeBanner(environment: widget.environment),
                   ],
                 ),
               ),
             ),
-            HomeFooter(
-              userName: widget.session.displayName,
-              statusLabel: statusLabel,
-            ),
+            HomeFooter(userDetails: footerText),
           ],
         ),
       ),

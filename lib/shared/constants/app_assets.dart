@@ -11,5 +11,6 @@ class AppStrings {
   const AppStrings._();
 
   static const appName = 'Controller App';
-  static const appVersionLabel = 'V 1.1109136';
+  static const appVersionName = '1.1109.136';
+  static const appVersionLabel = 'V $appVersionName';
 }

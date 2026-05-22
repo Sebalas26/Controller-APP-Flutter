@@ -15,5 +15,7 @@ class AppColors {
   static const blue8 = Color(0xFFF0F5FF);
   static const orange = Color(0xFFE76100);
   static const red = Color(0xFFCF1111);
+  static const nativeBadgeRed = Color(0xFFA10303);
   static const green = Color(0xFF01623D);
+  static const onlineGreen = Color(0xFF00DB24);
 }

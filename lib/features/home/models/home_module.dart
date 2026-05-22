@@ -6,21 +6,30 @@ class AppModule {
     required this.title,
     required this.icon,
     required this.legacyRoute,
+    this.homeTitle,
     this.primary = false,
+    this.showNew = false,
+    this.enabled = true,
   });
 
   final String id;
   final String title;
   final IconData icon;
   final String legacyRoute;
+  final String? homeTitle;
   final bool primary;
+  final bool showNew;
+  final bool enabled;
+
+  String get homeLabel => homeTitle ?? title;
 }
 
 const appModules = [
   AppModule(
     id: 'vender',
     title: 'Vender',
-    icon: Icons.point_of_sale_outlined,
+    homeTitle: 'Admitir\nEnvios',
+    icon: Icons.add_box_outlined,
     legacyRoute:
         '.vistas.admision_mensajeria.admision_automatica.AdmisionAutomaticaViewPager',
     primary: true,
@@ -28,7 +37,7 @@ const appModules = [
   AppModule(
     id: 'entregar',
     title: 'Entregar',
-    icon: Icons.local_shipping_outlined,
+    icon: Icons.near_me_outlined,
     legacyRoute: '.vistas.explorador.mensajeria.ExploradorEntregasMensajeria',
     primary: true,
   ),

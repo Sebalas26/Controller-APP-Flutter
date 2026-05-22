@@ -3,40 +3,29 @@ import 'package:flutter/material.dart';
 import '../../../../shared/theme/app_colors.dart';
 
 class HomeFooter extends StatelessWidget {
-  const HomeFooter({
-    super.key,
-    required this.userName,
-    required this.statusLabel,
-  });
+  const HomeFooter({super.key, required this.userDetails});
 
-  final String userName;
-  final String statusLabel;
+  final String userDetails;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-      decoration: const BoxDecoration(color: AppColors.black),
-      child: Row(
-        children: [
-          const Icon(Icons.person_outline, color: AppColors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              userName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Text(
+          userDetails,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: AppColors.black,
+            fontFamily: 'Montserrat',
+            fontSize: 10,
+            fontWeight: FontWeight.w400,
           ),
-          Text(
-            statusLabel,
-            style: const TextStyle(color: AppColors.white, fontSize: 12),
-          ),
-        ],
+        ),
       ),
     );
   }
