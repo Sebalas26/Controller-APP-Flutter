@@ -25,8 +25,12 @@ import UserNotifications
         switch call.method {
         case "getAndroidId":
           result(UIDevice.current.identifierForVendor?.uuidString ?? "")
-        case "getAesPasswordSecret", "getAesKeySecret", "getAesSaltSecret":
+        case "getAesPasswordSecret":
           result("")
+        case "getAesKeySecret":
+          result("SW50M3JyNHAxZDFzMW0wQ2w0UzMzbmNyMXBjMTBuUHQyMDIy")
+        case "getAesSaltSecret":
+          result("MW5UM3JyNHAxZDFTMU0wXzIwMjI=")
         case "takePackagePhoto":
           self?.takePackagePhoto(result: result)
         case "scanQrCode":

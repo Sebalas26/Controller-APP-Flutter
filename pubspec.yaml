@@ -31,6 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
 
+  flutter_svg: ^2.2.0
   cupertino_icons: ^1.0.8
   dio: ^5.7.0
   archive: ^4.0.7
@@ -75,6 +76,8 @@ flutter:
     - assets/images/recoger/newrecogidasa.png
     - assets/images/recoger/detalle_recogida_bg.png
     - assets/images/recoger/recogidas_flujo_cantidad_bg.png
+    - assets/images/
+    - assets/vectors/
 
   fonts:
     - family: Montserrat

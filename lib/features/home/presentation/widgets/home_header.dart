@@ -38,7 +38,7 @@ class HomeHeader extends StatelessWidget {
           const SizedBox(width: 16),
           Expanded(
             child: Align(
-              alignment: Alignment.centerLeft,
+              alignment: Alignment.center,
               child: Image.asset(
                 AppAssets.logoInterrapidisimo,
                 width: 160,

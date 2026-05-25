@@ -5,6 +5,7 @@ class AppAssets {
   static const droneFlyingWithPackage =
       'assets/images/drone_flying_with_package.png';
   static const logoAnimated = 'assets/images/logo_animated.gif';
+  static const solarUserOutline = 'assets/vectors/solar_user_outline.xml';
 }
 
 class AppStrings {
