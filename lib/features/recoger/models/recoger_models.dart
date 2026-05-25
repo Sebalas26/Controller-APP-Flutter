@@ -34,8 +34,22 @@ class RecogidaItem {
   bool get isFixedPickup => pickupTypeId == 1 || pickupTypeId == 3;
 
   factory RecogidaItem.fromJson(Map<String, dynamic> json, {int status = 0}) {
-    final id = _readString(json, const ['Id', 'id', 'idSolicitudRecogida']);
-    final typeId = _readInt(json, const ['TipoRecogida', 'tipoRecogida']);
+    final id = _readString(json, const [
+      'Id',
+      'id',
+      'ID',
+      'IdSolicitud',
+      'idSolicitud',
+      'IdSolicitudRecogida',
+      'idSolicitudRecogida',
+      'R_IdSolicitudRecogida',
+    ]);
+    final typeId = _readInt(json, const [
+      'TipoRecogida',
+      'tipoRecogida',
+      'IdTipoRecogida',
+      'idTipoRecogida',
+    ]);
     final count = _readInt(json, const [
       'CantidadPreenvios',
       'cantidadPreenvios',
@@ -50,8 +64,16 @@ class RecogidaItem {
     ]);
     return RecogidaItem(
       id: id,
-      type: _pickupTypeLabel(typeId, _readString(json, const ['Tipo'])),
-      address: _readString(json, const ['Direccion', 'direccion']),
+      type: _pickupTypeLabel(
+        typeId,
+        _readString(json, const ['Tipo', 'tipo', 'NombreTipoRecogida']),
+      ),
+      address: _readString(json, const [
+        'Direccion',
+        'direccion',
+        'DireccionRecogida',
+        'direccionRecogida',
+      ]),
       customerName: _coalesce([
         _readString(json, const ['PreguntarPor', 'preguntarPor']),
         _readString(json, const ['Nombre', 'nombre']),
@@ -212,12 +234,11 @@ Map<String, dynamic> recogidaDecodeJson(String source) {
 }
 
 String _pickupTypeLabel(int id, String fallback) {
-  if (fallback.trim().isNotEmpty) return fallback;
   return switch (id) {
-    1 => 'RECOGIDA FIJA CLIENTE',
-    2 => 'RECOGIDA ESPORADICA',
-    3 => 'RECOGIDA FIJA CENTRO SERVICIO',
-    _ => 'TIPO RECOGIDA',
+    1 => 'CREDITO',
+    2 => 'PEATON',
+    3 => 'PUNTO',
+    _ => fallback.trim().isNotEmpty ? fallback.trim() : 'TIPO RECOGIDA',
   };
 }
 

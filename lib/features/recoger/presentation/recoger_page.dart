@@ -527,7 +527,7 @@ class _RecogidaCard extends StatelessWidget {
                     ],
                     const SizedBox(height: 4),
                     Text(
-                      item.id,
+                      'Id - ${item.id}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: AppColors.black,

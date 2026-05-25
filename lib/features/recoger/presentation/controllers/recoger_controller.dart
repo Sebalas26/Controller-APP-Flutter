@@ -87,12 +87,35 @@ class RecogerController extends ChangeNotifier {
         statusMessage = 'Recogidas reservadas cargadas desde BD local.';
         return;
       }
-      final remote = await remoteRepository.fetchReserved(
-        config: apiConfig,
-        appInformation: appInformation,
-      );
-      await localRepository.saveFixedPickups(remote);
-      reservadas = await localRepository.fixedPickups();
+      final localFixed = await localRepository.fixedPickups();
+      final localStatusById = {
+        for (final pickup in localFixed) pickup.id: pickup.status,
+      };
+      List<RecogidaItem> remote;
+      try {
+        remote = await remoteRepository.fetchReserved(
+          config: apiConfig,
+          appInformation: appInformation,
+        );
+      } on Object {
+        reservadas = localFixed;
+        if (reservadas.isNotEmpty) {
+          statusMessage =
+              'Recogidas reservadas cargadas desde BD local por falla remota.';
+          return;
+        }
+        rethrow;
+      }
+      final visible = remote
+          .where((pickup) => localStatusById[pickup.id] != 1)
+          .map((pickup) {
+            final localStatus = localStatusById[pickup.id];
+            if (localStatus == null) return pickup;
+            return RecogidaItem.fromJson(pickup.raw, status: localStatus);
+          })
+          .toList();
+      await localRepository.saveFixedPickups(visible);
+      reservadas = visible;
       final motives = await remoteRepository.fetchCancelMotives(
         config: apiConfig,
         appInformation: appInformation,
