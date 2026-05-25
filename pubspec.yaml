@@ -71,6 +71,10 @@ flutter:
     - assets/images/logo_interrapidisimo.png
     - assets/images/drone_flying_with_package.png
     - assets/images/logo_animated.gif
+    - assets/images/recoger/newrecogidas.png
+    - assets/images/recoger/newrecogidasa.png
+    - assets/images/recoger/detalle_recogida_bg.png
+    - assets/images/recoger/recogidas_flujo_cantidad_bg.png
 
   fonts:
     - family: Montserrat

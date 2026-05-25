@@ -4,8 +4,7 @@ import '../../../shared/network/controller_api_config.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../login/login.dart';
 import '../models/recoger_models.dart';
-
-enum _RecogerTab { disponibles, reservadas, efectivas }
+import 'controllers/recoger_controller.dart';
 
 class RecogerPage extends StatefulWidget {
   const RecogerPage({
@@ -24,37 +23,48 @@ class RecogerPage extends StatefulWidget {
 }
 
 class _RecogerPageState extends State<RecogerPage> {
-  _RecogerTab _selectedTab = _RecogerTab.disponibles;
-  bool _showPreenvios = false;
+  late final RecogerController _controller;
   final _searchController = TextEditingController();
 
-  final _disponibles = const <RecogidaItem>[];
-  final _reservadas = const <RecogidaItem>[
-    RecogidaItem(
-      id: 'Id - Recogida',
-      type: 'TIPO RECOGIDA',
-      address: 'Cra 44 # 3 - 87 Bodega dos segunda puerta',
-      customerName: 'Nombres Completos',
-      description: '# Envios - Peso kg',
-      time: '12:00',
-    ),
-  ];
-  final _efectivas = const <RecogidaItem>[];
-  final _preenvios = const <RecogidaPreenvio>[];
+  @override
+  void initState() {
+    super.initState();
+    _controller = RecogerController(
+      appInformation: widget.appInformation,
+      apiConfig: widget.apiConfig,
+      offline: widget.offline,
+    )..addListener(_onControllerChanged);
+    _controller.initialize();
+  }
 
   @override
   void dispose() {
+    _controller
+      ..removeListener(_onControllerChanged)
+      ..dispose();
     _searchController.dispose();
     super.dispose();
   }
 
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_showPreenvios) {
+    if (_controller.showPreenvios) {
       return _PreenviosView(
         searchController: _searchController,
-        preenvios: _preenvios,
-        onBack: () => setState(() => _showPreenvios = false),
+        preenvios: _controller.preenvios,
+        loading: _controller.syncing,
+        statusMessage: _controller.statusMessage,
+        errorMessage: _controller.errorMessage,
+        billingMessage: _controller.lastBillingResult?.message ?? '',
+        onBack: _controller.closePreguides,
+        onSearch: _controller.searchPreguide,
+        onScan: _scanPreguide,
+        onAddSale: _openAddSale,
+        onBilling: _controller.executeBilling,
       );
     }
     return ColoredBox(
@@ -63,11 +73,17 @@ class _RecogerPageState extends State<RecogerPage> {
         children: [
           _RecogerHeader(onBack: () => Navigator.of(context).maybePop()),
           _RecogerTabs(
-            selected: _selectedTab,
-            disponibles: _disponibles.length,
-            reservadas: _reservadas.length,
-            efectivas: _efectivas.length,
-            onSelected: (tab) => setState(() => _selectedTab = tab),
+            selected: _controller.selectedTab,
+            disponibles: _controller.disponibles.length,
+            reservadas: _controller.reservadas.length,
+            efectivas: _controller.efectivas.length,
+            onSelected: _controller.selectTab,
+          ),
+          if (_controller.loading || _controller.syncing)
+            const LinearProgressIndicator(minHeight: 2),
+          _RecogerStatusBanner(
+            message: _controller.statusMessage,
+            error: _controller.errorMessage,
           ),
           Expanded(child: _body()),
         ],
@@ -76,36 +92,96 @@ class _RecogerPageState extends State<RecogerPage> {
   }
 
   Widget _body() {
-    switch (_selectedTab) {
-      case _RecogerTab.disponibles:
+    switch (_controller.selectedTab) {
+      case RecogerTab.disponibles:
         return _RecogidasList(
           title: 'Recogidas disponibles',
-          counter: _disponibles.length,
-          items: _disponibles,
+          counter: _controller.disponibles.length,
+          items: _controller.disponibles,
           emptyMessage: 'No hay recogidas disponibles para mostrar.',
-          onRefresh: () {},
-          onOpenPreenvios: () => setState(() => _showPreenvios = true),
+          onRefresh: _controller.refreshCurrent,
+          onOpenPreenvios: _confirmAssignAvailable,
         );
-      case _RecogerTab.reservadas:
+      case RecogerTab.reservadas:
         return _RecogidasList(
           title: 'Recogidas reservadas',
-          counter: _reservadas.length,
-          items: _reservadas,
+          counter: _controller.reservadas.length,
+          items: _controller.reservadas,
           emptyMessage: 'No hay recogidas reservadas para mostrar.',
-          onRefresh: () {},
-          onOpenPreenvios: () => setState(() => _showPreenvios = true),
+          onRefresh: _controller.refreshCurrent,
+          onOpenPreenvios: _controller.openPreguides,
         );
-      case _RecogerTab.efectivas:
+      case RecogerTab.efectivas:
         return _RecogidasList(
           title: 'Recogidas efectivas',
-          counter: _efectivas.length,
-          items: _efectivas,
+          counter: _controller.efectivas.length,
+          items: _controller.efectivas,
           emptyMessage: 'No hay recogidas efectivas para mostrar.',
           showSyncActions: true,
-          onRefresh: () {},
-          onOpenPreenvios: () => setState(() => _showPreenvios = true),
+          onRefresh: _controller.refreshCurrent,
+          onOpenPreenvios: _controller.openPreguides,
         );
     }
+  }
+
+  Future<void> _confirmAssignAvailable(RecogidaItem pickup) async {
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _AssignPickupSheet(pickup: pickup),
+    );
+    if (ok == true) {
+      await _controller.assignAvailable(pickup);
+    }
+  }
+
+  Future<void> _scanPreguide() async {
+    final value = await _manualGuideDialog(
+      title: 'Escanear preenvio',
+      hint: 'Numero leido del QR',
+    );
+    if (value != null) await _controller.searchPreguide(value);
+  }
+
+  Future<void> _openAddSale() async {
+    final pickup = _controller.selectedPickup;
+    if (pickup == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Agregar nueva venta usa el flujo de Admitir con la recogida seleccionada.',
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _manualGuideDialog({
+    required String title,
+    required String hint,
+  }) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Buscar'),
+          ),
+        ],
+      ),
+    ).whenComplete(controller.dispose);
   }
 }
 
@@ -125,6 +201,13 @@ class _RecogerHeader extends StatelessWidget {
             icon: const Icon(Icons.arrow_back, color: AppColors.black),
             tooltip: 'Atras',
           ),
+          Image.asset(
+            'assets/images/recoger/newrecogidas.png',
+            width: 28,
+            height: 28,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
+          const SizedBox(width: 8),
           const Text(
             'Recogidas',
             style: TextStyle(
@@ -149,11 +232,11 @@ class _RecogerTabs extends StatelessWidget {
     required this.onSelected,
   });
 
-  final _RecogerTab selected;
+  final RecogerTab selected;
   final int disponibles;
   final int reservadas;
   final int efectivas;
-  final ValueChanged<_RecogerTab> onSelected;
+  final ValueChanged<RecogerTab> onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -164,20 +247,20 @@ class _RecogerTabs extends StatelessWidget {
           _RecogerTabItem(
             label: 'Disponibles',
             count: disponibles,
-            selected: selected == _RecogerTab.disponibles,
-            onTap: () => onSelected(_RecogerTab.disponibles),
+            selected: selected == RecogerTab.disponibles,
+            onTap: () => onSelected(RecogerTab.disponibles),
           ),
           _RecogerTabItem(
             label: 'Reservadas',
             count: reservadas,
-            selected: selected == _RecogerTab.reservadas,
-            onTap: () => onSelected(_RecogerTab.reservadas),
+            selected: selected == RecogerTab.reservadas,
+            onTap: () => onSelected(RecogerTab.reservadas),
           ),
           _RecogerTabItem(
             label: 'Efectivas',
             count: efectivas,
-            selected: selected == _RecogerTab.efectivas,
-            onTap: () => onSelected(_RecogerTab.efectivas),
+            selected: selected == RecogerTab.efectivas,
+            onTap: () => onSelected(RecogerTab.efectivas),
           ),
         ],
       ),
@@ -259,7 +342,7 @@ class _RecogidasList extends StatelessWidget {
   final List<RecogidaItem> items;
   final String emptyMessage;
   final VoidCallback onRefresh;
-  final VoidCallback onOpenPreenvios;
+  final ValueChanged<RecogidaItem> onOpenPreenvios;
   final bool showSyncActions;
 
   @override
@@ -277,7 +360,7 @@ class _RecogidasList extends StatelessWidget {
                   _RecogidaCard(
                     item: item,
                     showSyncActions: showSyncActions,
-                    onTap: onOpenPreenvios,
+                    onTap: () => onOpenPreenvios(item),
                   ),
             ],
           ),
@@ -377,7 +460,7 @@ class _RecogidaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Material(
+        child: Material(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(8),
         elevation: 2,
@@ -389,6 +472,16 @@ class _RecogidaCard extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             child: Stack(
               children: [
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0.04,
+                    child: Image.asset(
+                      'assets/images/recoger/detalle_recogida_bg.png',
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -500,19 +593,35 @@ class _PreenviosView extends StatelessWidget {
   const _PreenviosView({
     required this.searchController,
     required this.preenvios,
+    required this.loading,
+    required this.statusMessage,
+    required this.errorMessage,
+    required this.billingMessage,
     required this.onBack,
+    required this.onSearch,
+    required this.onScan,
+    required this.onAddSale,
+    required this.onBilling,
   });
 
   final TextEditingController searchController;
   final List<RecogidaPreenvio> preenvios;
+  final bool loading;
+  final String statusMessage;
+  final String? errorMessage;
+  final String billingMessage;
   final VoidCallback onBack;
+  final ValueChanged<String> onSearch;
+  final VoidCallback onScan;
+  final VoidCallback onAddSale;
+  final VoidCallback onBilling;
 
   @override
   Widget build(BuildContext context) {
     final asociados = preenvios.length;
     final verificados = preenvios.where((item) => item.verified).length;
     final anulados = preenvios.where((item) => item.cancelled).length;
-    final valor = preenvios.fold<int>(0, (sum, item) => sum + item.value);
+    final valor = preenvios.fold<double>(0, (sum, item) => sum + item.value);
     return ColoredBox(
       color: AppColors.white,
       child: Column(
@@ -524,7 +633,18 @@ class _PreenviosView extends StatelessWidget {
             anulados: anulados,
             valorCobrar: valor,
           ),
-          _PreenviosSearch(controller: searchController),
+          if (loading) const LinearProgressIndicator(minHeight: 2),
+          _RecogerStatusBanner(
+            message: billingMessage.trim().isNotEmpty
+                ? billingMessage
+                : statusMessage,
+            error: errorMessage,
+          ),
+          _PreenviosSearch(
+            controller: searchController,
+            onSearch: onSearch,
+            onScan: onScan,
+          ),
           Expanded(
             child: preenvios.isEmpty
                 ? const _RecogerEmptyState(
@@ -537,7 +657,7 @@ class _PreenviosView extends StatelessWidget {
                     ],
                   ),
           ),
-          const _PreenviosActions(),
+          _PreenviosActions(onAddSale: onAddSale, onBilling: onBilling),
         ],
       ),
     );
@@ -591,7 +711,7 @@ class _PreenviosCounters extends StatelessWidget {
   final int asociados;
   final int verificados;
   final int anulados;
-  final int valorCobrar;
+  final double valorCobrar;
 
   @override
   Widget build(BuildContext context) {
@@ -663,9 +783,15 @@ class _PreenvioCounter extends StatelessWidget {
 }
 
 class _PreenviosSearch extends StatelessWidget {
-  const _PreenviosSearch({required this.controller});
+  const _PreenviosSearch({
+    required this.controller,
+    required this.onSearch,
+    required this.onScan,
+  });
 
   final TextEditingController controller;
+  final ValueChanged<String> onSearch;
+  final VoidCallback onScan;
 
   @override
   Widget build(BuildContext context) {
@@ -683,7 +809,7 @@ class _PreenviosSearch extends StatelessWidget {
               child: Row(
                 children: [
                   IconButton(
-                    onPressed: () {},
+                    onPressed: () => onSearch(controller.text),
                     icon: const Icon(Icons.search, color: AppColors.black),
                     tooltip: 'Buscar',
                   ),
@@ -702,7 +828,7 @@ class _PreenviosSearch extends StatelessWidget {
             ),
           ),
           IconButton(
-            onPressed: () {},
+            onPressed: onScan,
             icon: const Icon(Icons.qr_code_scanner, color: AppColors.black),
             tooltip: 'Escanear',
           ),
@@ -750,7 +876,13 @@ class _PreenvioCard extends StatelessWidget {
 }
 
 class _PreenviosActions extends StatelessWidget {
-  const _PreenviosActions();
+  const _PreenviosActions({
+    required this.onAddSale,
+    required this.onBilling,
+  });
+
+  final VoidCallback onAddSale;
+  final VoidCallback onBilling;
 
   @override
   Widget build(BuildContext context) {
@@ -764,14 +896,14 @@ class _PreenviosActions extends StatelessWidget {
               label: 'Agregar nueva venta',
               icon: Icons.add,
               filled: false,
-              onTap: () {},
+              onTap: onAddSale,
             ),
             const SizedBox(height: 8),
             _PreenvioButton(
               label: 'Facturar',
               icon: Icons.receipt_long,
               filled: true,
-              onTap: () {},
+              onTap: onBilling,
             ),
           ],
         ),
@@ -817,8 +949,114 @@ class _PreenvioButton extends StatelessWidget {
   }
 }
 
-String _money(int value) {
-  final text = value.toString();
+class _RecogerStatusBanner extends StatelessWidget {
+  const _RecogerStatusBanner({required this.message, required this.error});
+
+  final String message;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = error?.trim().isNotEmpty == true ? error!.trim() : message;
+    if (text.trim().isEmpty) return const SizedBox.shrink();
+    final isError = error?.trim().isNotEmpty == true;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: isError ? const Color(0xFFFFEBEE) : const Color(0xFFE8F5E9),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: isError ? const Color(0xFFC62828) : const Color(0xFF2E7D32),
+          fontFamily: 'Montserrat',
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _AssignPickupSheet extends StatelessWidget {
+  const _AssignPickupSheet({required this.pickup});
+
+  final RecogidaItem pickup;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Reservar recogida',
+                    style: TextStyle(
+                      color: AppColors.black,
+                      fontFamily: 'Montserrat',
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Cerrar',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Id - ${pickup.id}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Montserrat'),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              pickup.address,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Montserrat'),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              pickup.description,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Montserrat'),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.black,
+                foregroundColor: AppColors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+              ),
+              child: const Text('Aceptar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _money(num value) {
+  final text = value.round().toString();
   final buffer = StringBuffer();
   for (var i = 0; i < text.length; i++) {
     final remaining = text.length - i;
