@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/config/app_environment.dart';
@@ -182,6 +183,8 @@ class AppNavigationDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
+      backgroundColor: const Color(0xB3000000),
+      elevation: 0,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -191,27 +194,76 @@ class AppNavigationDrawer extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Image.asset(AppAssets.logoInterrapidisimo, height: 34),
-                  const SizedBox(height: 22),
-                  Text(
-                    session.displayName,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: GestureDetector(
+                      onTap: () {
+                        // Agregar acción aquí
+                      },
+                      child: Image.asset(
+                        'assets/images/button_image.png',
+                        height: 40,
+                        width: 40,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    environment.appName,
-                    style: const TextStyle(color: AppColors.gray700),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      SvgPicture.asset(
+                        'assets/vectors/solar_user_outline.svg',
+                        height: 34,
+                        colorFilter: const ColorFilter.mode(
+                          Colors.white,
+                          BlendMode.srcIn,
+                        ),
+                      ),
+
+                      const SizedBox(width: 12),
+
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              session.displayName,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+
+                            const SizedBox(height: 4),
+
+                            Text(
+                              environment.appName,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1),
+
+            Divider(height: 1, color: Colors.white.withOpacity(0.12)),
+
             ListTile(
-              leading: const Icon(Icons.notifications_none),
-              title: const Text('Notificaciones'),
+              title: const Text(
+                'Reimprimir',
+                style: TextStyle(
+                  color: Colors.white,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Colors.white,
+                  decorationThickness: 1.0,
+                  decorationStyle: TextDecorationStyle.solid
+                ),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(
@@ -219,9 +271,18 @@ class AppNavigationDrawer extends StatelessWidget {
                 );
               },
             ),
+
             ListTile(
-              leading: const Icon(Icons.cloud_queue_outlined),
-              title: const Text('Ambientes'),
+              title: const Text(
+                'Reporte cajas',
+                style: TextStyle(
+                  color: Colors.white,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Colors.white,
+                  decorationThickness: 1.0, 
+                  decorationStyle: TextDecorationStyle.solid,
+                ),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(
@@ -234,9 +295,18 @@ class AppNavigationDrawer extends StatelessWidget {
                 );
               },
             ),
+
             ListTile(
-              leading: const Icon(Icons.route_outlined),
-              title: const Text('Rutas Android'),
+              title: const Text(
+                'Sincronizar',
+                style: TextStyle(
+                  color: Colors.white,
+                  decoration: TextDecoration.underline,
+                  decorationColor: Colors.white,
+                  decorationThickness: 1.0,
+                  decorationStyle: TextDecorationStyle.solid,
+                ),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(
@@ -244,16 +314,23 @@ class AppNavigationDrawer extends StatelessWidget {
                 );
               },
             ),
+
             const Spacer(),
+
             Padding(
               padding: const EdgeInsets.all(16),
               child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
                 onPressed: () {
                   Navigator.pop(context);
                   onLogout();
                 },
                 icon: const Icon(Icons.logout),
-                label: const Text('Cerrar sesion'),
+                label: const Text('Cerrar sesión'),
               ),
             ),
           ],

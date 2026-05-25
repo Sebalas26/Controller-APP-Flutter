@@ -31,6 +31,7 @@ dependencies:
   flutter:
     sdk: flutter
 
+  flutter_svg: ^2.2.0
   cupertino_icons: ^1.0.8
   dio: ^5.7.0
   archive: ^4.0.7
@@ -68,9 +69,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/images/logo_interrapidisimo.png
-    - assets/images/drone_flying_with_package.png
-    - assets/images/logo_animated.gif
+    - assets/images/
+    - assets/vectors/
 
   fonts:
     - family: Montserrat
