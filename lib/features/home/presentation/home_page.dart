@@ -200,10 +200,10 @@ class AppNavigationDrawer extends StatelessWidget {
                       onTap: () {
                         // Agregar acción aquí
                       },
-                      child: Image.asset(
-                        'assets/images/button_image.png',
-                        height: 40,
-                        width: 40,
+                      child: SvgPicture.asset(
+                        'assets/vectors/button_image_x.svg',
+                        height: 20,
+                        width: 20,
                       ),
                     ),
                   ),

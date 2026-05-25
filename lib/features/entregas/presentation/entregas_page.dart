@@ -363,66 +363,143 @@ class _EntregasPageState extends State<EntregasPage> {
     }
   }
 }
-
-class _EntregasBanner extends StatelessWidget {
+class _EntregasBanner extends StatefulWidget {
   const _EntregasBanner({required this.controller});
 
   final EntregasController controller;
 
   @override
+  State<_EntregasBanner> createState() => _EntregasBannerState();
+}
+
+class _EntregasBannerState extends State<_EntregasBanner> {
+  Timer? _visibilityTimer;
+  bool _timeExpired = false;
+
+  final Duration _durationVisible = const Duration(seconds: 20);
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimerIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _EntregasBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final oldText = oldWidget.controller.errorMessage ?? oldWidget.controller.statusMessage;
+    final currentText = widget.controller.errorMessage ?? widget.controller.statusMessage;
+
+    final textChanged = oldText != currentText || oldWidget.controller.syncing != widget.controller.syncing;
+    
+    final isNewTrigger = widget.controller.syncing == false && currentText.trim().isNotEmpty;
+
+    if (textChanged || isNewTrigger) {
+      setState(() {
+        _timeExpired = false; 
+      });
+      _startTimerIfNeeded();
+    }
+  }
+
+  void _startTimerIfNeeded() {
+    _visibilityTimer?.cancel();
+
+    final text = widget.controller.errorMessage ?? widget.controller.statusMessage;
+    if (!widget.controller.syncing && text.trim().isNotEmpty) {
+      _visibilityTimer = Timer(_durationVisible, () {
+        if (mounted) {
+          setState(() {
+            _timeExpired = true;
+          });
+        }
+      });
+    }
+  }
+  
+  void _ocultarManualmente() {
+    _visibilityTimer?.cancel(); 
+    setState(() {
+      _timeExpired = true;
+    });
+  }
+
+  @override
+  void dispose() {
+    _visibilityTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final text = controller.errorMessage ?? controller.statusMessage;
-    if (text.trim().isEmpty && !controller.syncing) {
+    final text = widget.controller.errorMessage ?? widget.controller.statusMessage;
+
+    if (text.trim().isEmpty && !widget.controller.syncing) {
       return const SizedBox.shrink();
     }
-    final error = controller.errorMessage != null;
-    return Material(
-      color: error ? const Color(0xFFFACDD8) : AppColors.accentLight,
-      elevation: 4,
-      borderRadius: BorderRadius.circular(8),
-      clipBehavior: Clip.antiAlias,
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            Container(
-              width: 5,
-              color: error ? AppColors.red : AppColors.accent,
-            ),
-            const SizedBox(width: 10),
-            if (controller.syncing) ...[
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2.2),
-              ),
-              const SizedBox(width: 10),
-            ] else
-              Icon(
-                error ? Icons.cancel_outlined : Icons.info_outline,
-                color: AppColors.black,
-                size: 22,
-              ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  text,
-                  style: const TextStyle(
-                    color: AppColors.black,
-                    fontFamily: 'Montserrat',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+
+    final error = widget.controller.errorMessage != null;
+
+    return AnimatedOpacity(
+      opacity: _timeExpired ? 0.0 : 1.0,
+      duration: const Duration(milliseconds: 300),
+      child: Visibility(
+        visible: !_timeExpired,
+        maintainState: true,
+        child: GestureDetector(
+          onTap: _ocultarManualmente,
+          child: Material(
+            color: error ? const Color(0xFFFACDD8) : AppColors.accentLight,
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            clipBehavior: Clip.antiAlias,
+            child: IntrinsicHeight(
+              child: Row(
+                children: [
+                  Container(
+                    width: 5,
+                    color: error ? AppColors.red : AppColors.accent,
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  if (widget.controller.syncing) ...[
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    ),
+                    const SizedBox(width: 10),
+                  ] else
+                    Icon(
+                      error ? Icons.cancel_outlined : Icons.info_outline,
+                      color: AppColors.black,
+                      size: 22,
+                    ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        text,
+                        style: const TextStyle(
+                          color: AppColors.black,
+                          fontFamily: 'Montserrat',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
               ),
             ),
-            const SizedBox(width: 12),
-          ],
+          ),
         ),
       ),
     );
   }
+
 }
 
 class _EntregasNativeHeader extends StatelessWidget {

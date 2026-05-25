@@ -322,6 +322,8 @@ class EntregasController extends ChangeNotifier {
     required bool isQr,
   }) async {
     if (await localRepository.isGuideAlreadyDownloaded(guide.guideNumber)) {
+      statusMessage = 'La guia ${guide.guideNumber} ya fue descargada.';
+      notifyListeners();
       throw EntregaException('La guia ${guide.guideNumber} ya fue descargada.');
     }
     loading = true;

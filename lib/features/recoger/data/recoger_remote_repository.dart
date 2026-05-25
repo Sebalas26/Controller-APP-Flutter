@@ -115,7 +115,7 @@ class RecogerRemoteRepository {
     required AppInformation appInformation,
     required String pickupId,
   }) async {
-    final client = await _controllerClient(config, appInformation);
+    final client = await _preenviosClient(config, appInformation);
     final response = await client.get<dynamic>(
       'Admision/PreEnviosYAdmisionesRecogidas',
       queryParameters: {'idRecogida': pickupId},
@@ -254,6 +254,18 @@ class RecogerRemoteRepository {
     final idKey = await _idKeyProvider.createIdKey(config);
     return _httpClient.client(
       config.controllerBaseUrl,
+      headerSource: appInformation,
+      idKey: idKey,
+    );
+  }
+
+  Future<Dio> _preenviosClient(
+    ControllerApiConfig config,
+    AppInformation appInformation,
+  ) async {
+    final idKey = await _idKeyProvider.createIdKey(config);
+    return _httpClient.client(
+      config.preenvioBaseUrl,
       headerSource: appInformation,
       idKey: idKey,
     );

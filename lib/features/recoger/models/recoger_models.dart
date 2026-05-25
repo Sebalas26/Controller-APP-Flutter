@@ -142,7 +142,7 @@ class RecogidaPreenvio {
             'IdEstadoPreEnvios',
             'idEstadoPreenvioLog',
           ]) !=
-          0,
+          0, 
       cancelled: _readString(json, const [
         'descripcionEstado',
         'DescripcionEstado',
