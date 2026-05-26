@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../shared/network/controller_api_config.dart';
 import '../../../login/login.dart';
+import '../../impresion/impresion.dart';
 import '../../data/vender_local_repository.dart';
 import '../../data/vender_remote_repository.dart';
 import '../../models/vender_models.dart';
@@ -17,14 +18,17 @@ class VenderFlowController extends ChangeNotifier {
     required this.offline,
     VenderLocalRepository? localRepository,
     VenderRemoteRepository? remoteRepository,
+    VenderPrintLocalRepository? printRepository,
   }) : localRepository = localRepository ?? VenderLocalRepository(),
-       remoteRepository = remoteRepository ?? VenderRemoteRepository();
+       remoteRepository = remoteRepository ?? VenderRemoteRepository(),
+       printRepository = printRepository ?? VenderPrintLocalRepository();
 
   final AppInformation appInformation;
   final ControllerApiConfig apiConfig;
   final bool offline;
   final VenderLocalRepository localRepository;
   final VenderRemoteRepository remoteRepository;
+  final VenderPrintLocalRepository printRepository;
 
   final preGuide = TextEditingController();
   final pieces = TextEditingController(text: '1');
@@ -454,6 +458,10 @@ class VenderFlowController extends ChangeNotifier {
     final collectionGuide = VenderCollectionGuide.fromOfflineAdmission(
       admission: admission,
       syncResult: syncResult,
+    );
+    await printRepository.saveLatestPrintPayload(
+      guideNumber: collectionGuide.guideNumber,
+      payloadJson: admission.printJson,
     );
     return VenderAdmissionSuccessState(
       guide: collectionGuide,

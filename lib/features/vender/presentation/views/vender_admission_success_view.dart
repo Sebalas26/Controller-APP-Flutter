@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../impresion/impresion.dart';
 import '../controllers/vender_flow_controller.dart';
 import '../widgets/vender_form_widgets.dart';
 
@@ -67,10 +68,18 @@ class VenderAdmissionSuccessView extends StatelessWidget {
               label: 'Si, agregar',
               enabled: false,
             ),
-            const _SuccessAction(
+            _SuccessAction(
               icon: Icons.print_outlined,
               label: 'Imprimir',
-              enabled: false,
+              enabled: true,
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        VenderPrintPage(guideNumber: state.guide.guideNumber),
+                  ),
+                );
+              },
             ),
             const _SuccessAction(
               icon: Icons.block_outlined,

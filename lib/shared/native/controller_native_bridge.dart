@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart'
     show MethodChannel, MissingPluginException, PlatformException;
 
@@ -48,18 +49,20 @@ class ControllerNativeBridge {
     try {
       return await _channel.invokeMethod<String>('takePackagePhoto') ?? '';
     } on MissingPluginException catch (e) {
-      print('takePackagePhoto - MissingPluginException: $e');
+      debugPrint('takePackagePhoto - MissingPluginException: $e');
       return '';
     } on PlatformException catch (e) {
-      print('takePackagePhoto - PlatformException: ${e.code} - ${e.message}');
+      debugPrint(
+        'takePackagePhoto - PlatformException: ${e.code} - ${e.message}',
+      );
       if (e.code == 'PERMISSION_DENIED') {
-        print('Permiso de cámara denegado. Verifica los permisos de la app.');
+        debugPrint('Permiso de camara denegado. Verifica los permisos.');
       } else if (e.code == 'CAMERA_ERROR' || e.code == 'CAMERA_LAUNCH_ERROR') {
-        print('Error al abrir cámara: ${e.message}');
+        debugPrint('Error al abrir camara: ${e.message}');
       }
       return '';
     } catch (e) {
-      print('takePackagePhoto - Unexpected error: $e');
+      debugPrint('takePackagePhoto - Unexpected error: $e');
       return '';
     }
   }
@@ -92,6 +95,87 @@ class ControllerNativeBridge {
       return '';
     } on PlatformException {
       return '';
+    }
+  }
+
+  Future<String> yaapUser() async {
+    try {
+      return await _channel.invokeMethod<String>('getYaapUser') ?? '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
+
+  Future<String> yaapPasswordPruebas() async {
+    try {
+      return await _channel.invokeMethod<String>('getYaapPasswordPruebas') ??
+          '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
+
+  Future<String> yaapPasswordQa() async {
+    try {
+      return await _channel.invokeMethod<String>('getYaapPasswordQa') ?? '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
+
+  Future<String> yaapPasswordProduccion() async {
+    try {
+      return await _channel.invokeMethod<String>('getYaapPasswordProduccion') ??
+          '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
+
+  Future<bool> hasBluetoothPrinter() async {
+    try {
+      return await _channel.invokeMethod<bool>('hasBluetoothPrinter') ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<bool> printPdfFile(String filePath, {required String jobName}) async {
+    try {
+      return await _channel.invokeMethod<bool>('printPdfFile', {
+            'filePath': filePath,
+            'jobName': jobName,
+          }) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException catch (e) {
+      debugPrint('printPdfFile - PlatformException: ${e.code} - ${e.message}');
+      return false;
+    }
+  }
+
+  Future<bool> openPdfFile(String filePath) async {
+    try {
+      return await _channel.invokeMethod<bool>('openPdfFile', {
+            'filePath': filePath,
+          }) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException catch (e) {
+      debugPrint('openPdfFile - PlatformException: ${e.code} - ${e.message}');
+      return false;
     }
   }
 }

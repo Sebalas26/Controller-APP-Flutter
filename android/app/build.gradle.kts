@@ -49,6 +49,26 @@ android {
             "ENCRYPT_AES256_KEY_SECRET",
             (apikeyProperties["ENCRYPT_AES256_KEY_SECRET"] as String?) ?: "\"\""
         )
+        buildConfigField(
+            "String",
+            "YAAP_USER",
+            (apikeyProperties["YAAP_USER"] as String?) ?: "\"\""
+        )
+        buildConfigField(
+            "String",
+            "YAAP_PASSWORD_PRUEBAS",
+            (apikeyProperties["YAAP_PASSWORD_PRUEBAS"] as String?) ?: "\"\""
+        )
+        buildConfigField(
+            "String",
+            "YAAP_PASSWORD_QA",
+            (apikeyProperties["YAAP_PASSWORD_QA"] as String?) ?: "\"\""
+        )
+        buildConfigField(
+            "String",
+            "YAAP_PASSWORD",
+            (apikeyProperties["YAAP_PASSWORD"] as String?) ?: "\"\""
+        )
     }
 
     buildFeatures {

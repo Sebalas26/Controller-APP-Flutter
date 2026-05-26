@@ -6,12 +6,16 @@ class ControllerApiConfig {
     required this.loginIntegrationBaseUrl,
     required this.syncFilesBaseUrl,
     required this.serviciosInterBaseUrl,
+    required this.serviciosAgilesBaseUrl,
+    required this.yaapBaseUrl,
     required this.preenvioBaseUrl,
     required this.geoDireccionBaseUrl,
     required this.geoRefTokenBaseUrl,
     required this.admisionOfflineBaseUrl,
     required this.deliveryProofBaseUrl,
     required this.deliveryProofTokenBaseUrl,
+    required this.armadoBloquesBaseUrl,
+    required this.entregaBloqueBaseUrl,
   });
 
   final String label;
@@ -20,10 +24,14 @@ class ControllerApiConfig {
   final String loginIntegrationBaseUrl;
   final String syncFilesBaseUrl;
   final String serviciosInterBaseUrl;
+  final String serviciosAgilesBaseUrl;
+  final String yaapBaseUrl;
   final String preenvioBaseUrl;
   final String geoDireccionBaseUrl;
   final String geoRefTokenBaseUrl;
   final String admisionOfflineBaseUrl;
   final String deliveryProofBaseUrl;
   final String deliveryProofTokenBaseUrl;
+  final String armadoBloquesBaseUrl;
+  final String entregaBloqueBaseUrl;
 }

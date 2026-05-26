@@ -74,12 +74,6 @@ const appModules = [
     legacyRoute: '.features.mismensajeros.presentation.MisMensajerosActivity',
   ),
   AppModule(
-    id: 'yaap',
-    title: 'Yaap',
-    icon: Icons.verified_user_outlined,
-    legacyRoute: '.features.bloques.ui.yaap.ValidacionYaapActivity',
-  ),
-  AppModule(
     id: 'reimprimir',
     title: 'Reimprimir',
     icon: Icons.print_outlined,

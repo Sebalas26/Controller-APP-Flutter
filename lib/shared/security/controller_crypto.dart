@@ -86,6 +86,31 @@ class ControllerCrypto {
     return _utf16leToString(cipher.process(Uint8List.fromList(payload)));
   }
 
+  String decryptControllerAes({
+    required String encryptionKeyBase64,
+    required String saltBase64,
+    required String cipherText,
+  }) {
+    final encryptionKey = utf8.decode(base64Decode(encryptionKeyBase64));
+    final salt = Uint8List.fromList(base64Decode(saltBase64));
+    final payload = base64Decode(cipherText.replaceAll(RegExp(r'\s'), ''));
+    final keyAndIv = _deriveControllerKeyAndIv(encryptionKey, salt);
+    final cipher =
+        PaddedBlockCipherImpl(PKCS7Padding(), CBCBlockCipher(AESEngine()))
+          ..init(
+            false,
+            PaddedBlockCipherParameters<ParametersWithIV<KeyParameter>, Null>(
+              ParametersWithIV<KeyParameter>(
+                KeyParameter(keyAndIv.sublist(0, 32)),
+                keyAndIv.sublist(32, 48),
+              ),
+              null,
+            ),
+          );
+
+    return _utf16leToString(cipher.process(Uint8List.fromList(payload)));
+  }
+
   String encryptControllerIdKey({
     required String token,
     required String encryptionKeyBase64,

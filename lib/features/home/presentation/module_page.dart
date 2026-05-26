@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../reimpresion/reimpresion.dart';
+import '../../bloques/bloques.dart';
 import '../../entregas/entregas.dart';
 import '../../recoger/recoger.dart';
 import '../../vender/vender.dart';
@@ -59,6 +61,26 @@ class ModulePage extends StatelessWidget {
       );
     }
 
+    if (module.id == 'bloques') {
+      return Scaffold(
+        body: BloquesPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        ),
+      );
+    }
+
+    if (module.id == 'reimprimir') {
+      return Scaffold(
+        body: ReimpresionPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: Text(module.title)),
       body: SingleChildScrollView(
@@ -99,14 +121,20 @@ class ModulePage extends StatelessWidget {
         return const AccountStatusBody();
       case 'mis_mensajeros':
         return const CouriersBody();
-      case 'yaap':
-        return const YaapBody();
       case 'reimprimir':
-        return const ReprintBody();
+        return ReimpresionPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        );
       case 'anular':
         return const CancelGuideBody();
       case 'bloques':
-        return const BlocksBody();
+        return BloquesPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        );
       case 'enrutamiento':
         return const RoutingBody();
       case 'auditoria':
@@ -461,22 +489,6 @@ class CouriersBody extends StatelessWidget {
           status: 'Activo',
           icon: Icons.person_outline,
         ),
-      ],
-    );
-  }
-}
-
-class YaapBody extends StatelessWidget {
-  const YaapBody({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const TabWorkflow(
-      tabs: ['Pendiente', 'Verificado', 'Rechazado'],
-      children: [
-        GuideList(status: 'Pendiente', icon: Icons.pending_outlined),
-        GuideList(status: 'Verificado', icon: Icons.verified_outlined),
-        GuideList(status: 'Rechazado', icon: Icons.cancel_outlined),
       ],
     );
   }

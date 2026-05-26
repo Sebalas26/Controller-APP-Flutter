@@ -1,24 +1,39 @@
 package interrapidisimo.controller_app_flutter
 
 import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothClass
+import android.bluetooth.BluetoothManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.os.CancellationSignal
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.provider.Settings
 import android.provider.MediaStore
+import android.print.PageRange
+import android.print.PrintAttributes
+import android.print.PrintDocumentAdapter
+import android.print.PrintDocumentInfo
+import android.print.PrintManager
 import android.util.Base64
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.google.zxing.integration.android.IntentIntegrator
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import kotlin.math.roundToInt
 
 class MainActivity : FlutterActivity() {
@@ -36,11 +51,18 @@ class MainActivity : FlutterActivity() {
                     Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: ""
                 )
                 "getAesPasswordSecret" -> result.success(BuildConfig.ENCRYPT_AES256_PASSWORD_SECRET)
-                "getAesKeySecret" -> result.success("SW50M3JyNHAxZDFzMW0wQ2w0UzMzbmNyMXBjMTBuUHQyMDIy")
-                "getAesSaltSecret" -> result.success("MW5UM3JyNHAxZDFTMU0wXzIwMjI=")
+                "getAesKeySecret" -> result.success(BuildConfig.ENCRYPT_AES256_KEY_SECRET)
+                "getAesSaltSecret" -> result.success(BuildConfig.ENCRYPT_AES256_SALT_SECRET)
                 "takePackagePhoto" -> takePackagePhoto(result)
                 "scanQrCode" -> scanQrCode(result)
                 "compressImageBase64ToJpeg" -> compressImageBase64ToJpeg(call, result)
+                "getYaapUser" -> result.success(BuildConfig.YAAP_USER)
+                "getYaapPasswordPruebas" -> result.success(BuildConfig.YAAP_PASSWORD_PRUEBAS)
+                "getYaapPasswordQa" -> result.success(BuildConfig.YAAP_PASSWORD_QA)
+                "getYaapPasswordProduccion" -> result.success(BuildConfig.YAAP_PASSWORD)
+                "hasBluetoothPrinter" -> result.success(hasBluetoothPrinter())
+                "printPdfFile" -> printPdfFile(call, result)
+                "openPdfFile" -> openPdfFile(call, result)
                 else -> result.notImplemented()
             }
         }
@@ -319,6 +341,145 @@ class MainActivity : FlutterActivity() {
             .trim()
     }
 
+    private fun hasBluetoothPrinter(): Boolean {
+        return try {
+            val adapter = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                getSystemService(BluetoothManager::class.java)?.adapter
+            } else {
+                @Suppress("DEPRECATION")
+                BluetoothAdapter.getDefaultAdapter()
+            } ?: return false
+
+            if (!adapter.isEnabled) return false
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return false
+            }
+
+            adapter.bondedDevices.any { device ->
+                val majorClass = device.bluetoothClass?.majorDeviceClass
+                val name = device.name.orEmpty()
+                val looksLikePrinter =
+                    majorClass == BluetoothClass.Device.Major.IMAGING ||
+                        name.contains("SW_", ignoreCase = true) ||
+                        name.contains("printer", ignoreCase = true) ||
+                        name.contains("impresora", ignoreCase = true)
+                looksLikePrinter && isBluetoothDeviceConnected(device)
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isBluetoothDeviceConnected(device: android.bluetooth.BluetoothDevice): Boolean {
+        return try {
+            val method = device.javaClass.getMethod("isConnected")
+            method.invoke(device) as? Boolean ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun printPdfFile(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val file = File(call.argument<String>("filePath").orEmpty())
+            if (!file.exists() || !file.isFile) {
+                result.success(false)
+                return
+            }
+            val printManager = getSystemService(Context.PRINT_SERVICE) as? PrintManager
+            if (printManager == null) {
+                result.success(false)
+                return
+            }
+            val jobName = call.argument<String>("jobName").orEmpty()
+                .ifBlank { "Etiqueta Controller" }
+            val attributes = PrintAttributes.Builder()
+                .setMediaSize(PrintAttributes.MediaSize.ISO_A7)
+                .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                .build()
+            printManager.print(jobName, PdfFilePrintAdapter(file), attributes)
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("PRINT_ERROR", e.message ?: "No fue posible imprimir", null)
+        }
+    }
+
+    private fun openPdfFile(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            val file = File(call.argument<String>("filePath").orEmpty())
+            if (!file.exists() || !file.isFile) {
+                result.success(false)
+                return
+            }
+            val uri = FileProvider.getUriForFile(
+                this,
+                "${packageName}.provider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+            }
+            startActivity(Intent.createChooser(intent, "Abrir etiqueta"))
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("OPEN_PDF_ERROR", e.message ?: "No fue posible abrir PDF", null)
+        }
+    }
+
+    private class PdfFilePrintAdapter(private val file: File) : PrintDocumentAdapter() {
+        override fun onLayout(
+            oldAttributes: PrintAttributes?,
+            newAttributes: PrintAttributes?,
+            cancellationSignal: CancellationSignal?,
+            callback: LayoutResultCallback?,
+            extras: android.os.Bundle?
+        ) {
+            if (cancellationSignal?.isCanceled == true) {
+                callback?.onLayoutCancelled()
+                return
+            }
+            val info = PrintDocumentInfo.Builder(file.name)
+                .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                .setPageCount(PrintDocumentInfo.PAGE_COUNT_UNKNOWN)
+                .build()
+            callback?.onLayoutFinished(info, true)
+        }
+
+        override fun onWrite(
+            pages: Array<out PageRange>?,
+            destination: ParcelFileDescriptor?,
+            cancellationSignal: CancellationSignal?,
+            callback: WriteResultCallback?
+        ) {
+            try {
+                if (cancellationSignal?.isCanceled == true) {
+                    callback?.onWriteCancelled()
+                    return
+                }
+                if (destination == null) {
+                    callback?.onWriteFailed("Destino de impresion no disponible")
+                    return
+                }
+                FileInputStream(file).use { input ->
+                    FileOutputStream(destination.fileDescriptor).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                callback?.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
+            } catch (e: Exception) {
+                callback?.onWriteFailed(e.message)
+            }
+        }
+    }
+
     companion object {
         private const val REQUEST_PACKAGE_PHOTO = 4011
         private const val PERMISSION_REQUEST_CAMERA = 4012
@@ -332,4 +493,3 @@ class MainActivity : FlutterActivity() {
         private const val JPEG_QUALITY_STEP = 7
     }
 }
-

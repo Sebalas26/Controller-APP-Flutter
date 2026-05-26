@@ -102,12 +102,16 @@ class EnvironmentConfig {
       loginIntegrationBaseUrl: loginIntegracion,
       syncFilesBaseUrl: syncFilesBaseUrl,
       serviciosInterBaseUrl: serviciosInter,
+      serviciosAgilesBaseUrl: serviciosAgiles,
+      yaapBaseUrl: yaap,
       preenvioBaseUrl: preenvio,
       geoDireccionBaseUrl: geoDireccion,
       geoRefTokenBaseUrl: geoRefToken,
       admisionOfflineBaseUrl: admisionOffline,
       deliveryProofBaseUrl: pruebaEntregaAws,
       deliveryProofTokenBaseUrl: pruebaEntregaToken,
+      armadoBloquesBaseUrl: armadoBloques,
+      entregaBloqueBaseUrl: entregaBloque,
     );
   }
 
