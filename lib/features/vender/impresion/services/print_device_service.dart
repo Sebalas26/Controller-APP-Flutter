@@ -14,6 +14,14 @@ class PrintDeviceService {
     return _nativeBridge.printPdfFile(filePath, jobName: jobName);
   }
 
+  Future<bool> printSewooTest() {
+    return _nativeBridge.printSewooTest();
+  }
+
+  Future<String> printSewooTestDiagnostics() {
+    return _nativeBridge.printSewooTestDiagnostics();
+  }
+
   Future<bool> openPdfFile(String filePath) {
     return _nativeBridge.openPdfFile(filePath);
   }

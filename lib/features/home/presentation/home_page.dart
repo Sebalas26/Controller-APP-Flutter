@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../shared/config/app_environment.dart';
 import '../../../shared/constants/app_assets.dart';
 import '../../../shared/theme/app_colors.dart';
+import '../../vender/impresion/services/print_device_service.dart';
 import '../models/controller_session.dart';
 import '../models/home_module.dart';
 import 'environment_page.dart';
@@ -37,6 +39,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _guideController = TextEditingController();
+  final _printDeviceService = PrintDeviceService();
+  bool _printingSewooTest = false;
 
   @override
   void dispose() {
@@ -73,6 +77,47 @@ class _HomePageState extends State<HomePage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(url.toString())));
+    }
+  }
+
+  Future<void> _printSewooTest() async {
+    if (_printingSewooTest) return;
+    setState(() => _printingSewooTest = true);
+    try {
+      final diagnostics = await _printDeviceService.printSewooTestDiagnostics();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Diagnostico SEWO'),
+          content: SingleChildScrollView(
+            child: SelectableText(
+              diagnostics,
+              style: const TextStyle(fontSize: 13, height: 1.3),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+      final printed = diagnostics.contains('RESULTADO: OK');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            printed
+                ? 'Prueba SEWO enviada correctamente.'
+                : 'Diagnostico SEWO finalizado con error.',
+          ),
+          backgroundColor: printed ? const Color(0xFF01623D) : Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _printingSewooTest = false);
     }
   }
 
@@ -124,6 +169,23 @@ class _HomePageState extends State<HomePage> {
                         onSubmit: _launchTracking,
                       ),
                     ),
+                    if (kDebugMode) ...[
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: OutlinedButton.icon(
+                          onPressed: _printingSewooTest
+                              ? null
+                              : _printSewooTest,
+                          icon: const Icon(Icons.print_outlined),
+                          label: Text(
+                            _printingSewooTest
+                                ? 'Probando SEWO...'
+                                : 'Prueba SEWO iOS',
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     const SectionTitle(icon: Icons.check, text: 'Principales'),
                     PrimaryModulesLayout(
@@ -261,7 +323,7 @@ class AppNavigationDrawer extends StatelessWidget {
                   decoration: TextDecoration.underline,
                   decorationColor: Colors.white,
                   decorationThickness: 1.0,
-                  decorationStyle: TextDecorationStyle.solid
+                  decorationStyle: TextDecorationStyle.solid,
                 ),
               ),
               onTap: () {
@@ -279,7 +341,7 @@ class AppNavigationDrawer extends StatelessWidget {
                   color: Colors.white,
                   decoration: TextDecoration.underline,
                   decorationColor: Colors.white,
-                  decorationThickness: 1.0, 
+                  decorationThickness: 1.0,
                   decorationStyle: TextDecorationStyle.solid,
                 ),
               ),

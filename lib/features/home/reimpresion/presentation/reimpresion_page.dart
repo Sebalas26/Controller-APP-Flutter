@@ -37,8 +37,8 @@ class _ReimpresionPageState extends State<ReimpresionPage> {
   bool _busy = false;
   bool _networkWarning = false;
   String? _message;
+  bool _messageIsError = false;
   String? _error;
-  File? _lastPdf;
 
   @override
   void dispose() {
@@ -72,6 +72,7 @@ class _ReimpresionPageState extends State<ReimpresionPage> {
             onChanged: (_) => setState(() {
               _label = null;
               _message = null;
+              _messageIsError = false;
               _error = null;
               _networkWarning = false;
             }),
@@ -89,7 +90,7 @@ class _ReimpresionPageState extends State<ReimpresionPage> {
           ],
           if (_message != null) ...[
             const SizedBox(height: 16),
-            _ResultBanner(message: _message!, error: false),
+            _ResultBanner(message: _message!, error: _messageIsError),
           ],
           if (_error != null) ...[
             const SizedBox(height: 16),
@@ -136,6 +137,7 @@ class _ReimpresionPageState extends State<ReimpresionPage> {
     setState(() {
       _busy = true;
       _message = null;
+      _messageIsError = false;
       _error = null;
       _networkWarning = false;
     });
@@ -158,17 +160,16 @@ class _ReimpresionPageState extends State<ReimpresionPage> {
         payloadJson: jsonEncode(reprintLabel.toJson()),
       );
       final file = await _pdfService.createLabelPdf(reprintLabel);
-      _lastPdf = file;
-      final hasPrinter = await _deviceService.hasBluetoothPrinter();
-      if (hasPrinter) {
-        final printed = await _deviceService.printPdfFile(
-          file.path,
-          jobName: 'Reimpresion ${reprintLabel.displayGuide}',
-        );
-        if (!printed) await _deviceService.openPdfFile(file.path);
-      } else {
-        await _deviceService.openPdfFile(file.path);
-      }
+      final printed = await _deviceService.printPdfFile(
+        file.path,
+        jobName: 'Reimpresion ${reprintLabel.displayGuide}',
+      );
+      final previewMessage = printed
+          ? 'Etiqueta enviada a impresion.'
+          : Platform.isIOS
+          ? 'No fue posible imprimir en la SEWO LK-P25. Verifica que este encendida y enlazada por Bluetooth; puedes revisar la etiqueta aqui.'
+          : 'No fue posible imprimir en la SEWO. Puedes revisar la etiqueta aqui.';
+      final previewMessageIsError = !printed;
       if (!widget.offline) {
         unawaited(
           _remoteRepository.auditReprint(
@@ -181,13 +182,16 @@ class _ReimpresionPageState extends State<ReimpresionPage> {
       if (!mounted) return;
       setState(() {
         _label = reprintLabel;
-        _message = hasPrinter
-            ? 'Etiqueta enviada a impresion.'
-            : 'No se detecto impresora Bluetooth conectada. Se genero el PDF.';
+        _message = previewMessage;
+        _messageIsError = previewMessageIsError;
       });
+      await _openPreview(
+        reprintLabel,
+        file,
+        previewMessage,
+        isError: previewMessageIsError,
+      );
     } on Object catch (error) {
-      final file = _lastPdf;
-      if (file != null) await _deviceService.openPdfFile(file.path);
       if (!mounted) return;
       setState(() => _error = error.toString());
     } finally {
@@ -203,6 +207,24 @@ class _ReimpresionPageState extends State<ReimpresionPage> {
       config: widget.apiConfig,
       appInformation: widget.appInformation,
       guideNumber: guide,
+    );
+  }
+
+  Future<void> _openPreview(
+    VenderPrintLabel label,
+    File file,
+    String? message, {
+    bool isError = false,
+  }) {
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PrintLabelPreviewPage(
+          label: label,
+          pdfFile: file,
+          initialMessage: message,
+          initialMessageIsError: isError,
+        ),
+      ),
     );
   }
 }

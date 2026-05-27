@@ -28,6 +28,12 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Se usa la camara para registrar la evidencia del paquete entregado.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Se usa Bluetooth para imprimir etiquetas en impresoras Sewoo LK-P25.</string>
+	<key>UISupportedExternalAccessoryProtocols</key>
+	<array>
+		<string>com.mobileprinter.datapath</string>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

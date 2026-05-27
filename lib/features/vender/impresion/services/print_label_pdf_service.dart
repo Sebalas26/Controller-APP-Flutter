@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/print_label_models.dart';
+import '../utils/code128_barcode.dart';
 
 class PrintLabelPdfService {
   Future<File> createLabelPdf(VenderPrintLabel label) async {
@@ -25,10 +26,11 @@ class _PdfLabelDocument {
   _PdfLabelDocument(this.label);
 
   static const _width = 216.0;
-  static const _height = 420.0;
-  static const _margin = 12.0;
+  static const _margin = 2.0;
 
   final VenderPrintLabel label;
+
+  double get _height => label.offline ? 740.0 : 700.0;
 
   List<int> build() {
     final content = _content();
@@ -38,8 +40,8 @@ class _PdfLabelDocument {
       '''
 << /Type /Page /Parent 2 0 R /MediaBox [0 0 ${_width.toStringAsFixed(0)} ${_height.toStringAsFixed(0)}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>
 ''',
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>',
       '<< /Length ${latin1.encode(content).length} >>\nstream\n$content\nendstream',
     ];
 
@@ -78,112 +80,525 @@ class _PdfLabelDocument {
       ..writeln('0 0 0 rg')
       ..writeln('0.7 w');
 
-    _text(
+    var top = 15.0;
+    _inlineTop(
       content,
-      'INTER RAPIDISIMO',
+      'FECHA ESTIMADA DE ENTREGA: ',
+      _date(label.estimatedDeliveryDate),
       x: _margin,
-      y: 398,
-      size: 12,
-      bold: true,
+      y: top,
+      size: 8,
     );
-    _text(
-      content,
-      label.fromReprint ? 'REIMPRESION DE ETIQUETA' : 'ETIQUETA',
-      x: _margin,
-      y: 383,
-      size: 9,
-      bold: true,
-    );
-    _rightText(content, label.offline ? 'OFFLINE' : 'ONLINE', y: 383);
-    _line(content, 12, 374, 204, 374);
+    _serviceMark(content, x: 178, y: 20);
 
-    _text(content, 'GUIA', x: _margin, y: 359, size: 8, bold: true);
-    _text(
+    top += 18;
+    _textTop(
+      content,
+      _dash(label.serviceName),
+      x: _margin,
+      y: top,
+      size: 14,
+      bold: true,
+    );
+    top += 17;
+    _textTop(
+      content,
+      _dash(label.timeWindow),
+      x: _margin,
+      y: top,
+      size: 14,
+      bold: true,
+    );
+    top += 17;
+    _inlineTop(
+      content,
+      'FECHA ADMISION: ',
+      _dateTime(label.admissionDate),
+      x: _margin,
+      y: top,
+      size: 8,
+    );
+    top += 12;
+
+    if (label.hasRetirementWindow) {
+      _inlineTop(
+        content,
+        'FECHA PARA RETIRAR: ',
+        _dateOnly(label.estimatedDeliveryDate),
+        x: _margin,
+        y: top,
+        size: 8,
+      );
+      top += 9;
+      _inlineTop(
+        content,
+        'HASTA: ',
+        _dateOnly(label.estimatedDeliveryDateNew),
+        x: _margin,
+        y: top,
+        size: 8,
+      );
+      top += 11;
+    }
+
+    _routeTable(content, top);
+    top += 83;
+
+    _textTop(content, 'GUIA:', x: _margin, y: top, size: 13);
+    _textTop(content, label.displayGuide, x: 40, y: top, size: 13, bold: true);
+    if (label.zoneLabel.isNotEmpty) {
+      _rightTextTop(
+        content,
+        label.zoneLabel,
+        right: 211,
+        y: top,
+        size: 13,
+        bold: true,
+      );
+    }
+    top += 12;
+
+    _code128(
       content,
       label.displayGuide,
       x: _margin,
-      y: 338,
-      size: 24,
-      bold: true,
+      yTop: top,
+      width: 212,
+      height: 50,
     );
-    _code39(content, label.displayGuide, x: 14, y: 298, width: 188, height: 28);
-    _line(content, 12, 286, 204, 286);
+    top += 65;
 
-    var y = 270.0;
-    y = _section(content, 'DESTINATARIO', y);
-    y = _field(content, 'Nombre', label.recipientName, y);
-    y = _field(content, 'Documento', label.recipientDocument, y);
-    y = _field(content, 'Telefono', label.recipientPhone, y);
-    y = _field(content, 'Ciudad', label.recipientCity, y);
-    y = _field(content, 'Direccion', label.recipientAddress, y, lines: 2);
-    if (label.destinationPostalCode.isNotEmpty) {
-      y = _field(content, 'CP', label.destinationPostalCode, y);
+    top = _addressBox(
+      content,
+      top: top,
+      height: 72,
+      sideLabel: 'DE:',
+      lines: [
+        _PdfLine(label.senderName, bold: true, size: 8.6, maxChars: 26),
+        _PdfLine(
+          'CC: ${_dash(label.senderDocument)} | TEL: ${_dash(label.senderPhone)}',
+          size: 7.4,
+          maxChars: 34,
+        ),
+        _PdfLine(label.senderAddress, size: 7.4, maxChars: 36, maxLines: 2),
+        _PdfLine(label.senderCity, bold: true, size: 8, maxChars: 33),
+        _PdfLine(
+          'COD. POSTAL: ${_firstFilled([label.senderPostalCode, label.senderCity])}',
+          size: 7.3,
+          maxChars: 34,
+        ),
+      ],
+    );
+    top += 4;
+    top = _addressBox(
+      content,
+      top: top,
+      height: 98,
+      sideLabel: 'PARA:',
+      lines: [
+        _PdfLine(label.recipientName, bold: true, size: 8.8, maxChars: 25),
+        _PdfLine(
+          'CC: ${_dash(label.recipientDocument)} | TEL: ${_dash(label.recipientPhone)}',
+          size: 7.4,
+          maxChars: 34,
+        ),
+        _PdfLine(
+          label.recipientAddress,
+          bold: true,
+          size: 8.5,
+          maxChars: 30,
+          maxLines: 2,
+        ),
+        _PdfLine(label.recipientCity, bold: true, size: 8, maxChars: 33),
+        _PdfLine(
+          'COD.POSTAL:${_dash(label.destinationPostalCode)}',
+          size: 7.4,
+          maxChars: 34,
+        ),
+        if (!label.offline)
+          _PdfLine(
+            'BOLSA:${_dash(label.securityBag)}',
+            size: 7.4,
+            maxChars: 34,
+          ),
+        _PdfLine(
+          'OBS: ${_dash(label.observation)}',
+          size: 7.3,
+          maxChars: 34,
+          maxLines: 2,
+        ),
+      ],
+    );
+
+    if (label.offline) {
+      top += 11;
+      _textTop(content, _dash(label.deliveryType), x: _margin, y: top, size: 9);
+      top += 12;
+      _inlineTop(
+        content,
+        'VALOR COMERCIAL:',
+        '\$${label.commercialDisplayValue}',
+        x: _margin,
+        y: top,
+        size: 9,
+        boldValue: true,
+      );
+      top += 12;
+      _inlineTop(
+        content,
+        'CONTIENE:',
+        _dash(label.content),
+        x: _margin,
+        y: top,
+        size: 9,
+        boldValue: true,
+      );
+      top += 16;
+    } else {
+      top += 12;
     }
 
-    y -= 4;
-    y = _section(content, 'REMITENTE', y);
-    y = _field(content, 'Nombre', label.senderName, y);
-    y = _field(content, 'Documento', label.senderDocument, y);
-    y = _field(content, 'Telefono', label.senderPhone, y);
-    y = _field(content, 'Ciudad', label.senderCity, y);
-
-    y -= 4;
-    y = _section(content, 'DETALLE', y);
-    y = _field(content, 'Servicio', label.serviceName, y);
-    y = _field(content, 'Entrega', label.deliveryType, y);
-    y = _field(
+    _inlineTop(
       content,
-      'Piezas / Peso',
-      '${_dash(label.pieces)} / ${_dash(label.weight)} kg',
-      y,
+      'PESO: ',
+      '${_weight(label.weight)}KG',
+      x: _margin,
+      y: top,
+      size: 11,
+      boldValue: true,
     );
-    y = _field(content, 'Contiene', label.content, y, lines: 2);
-    y = _field(content, 'Bolsa', label.securityBag, y);
-
-    _line(content, 12, 46, 204, 46);
-    _text(content, 'Total', x: _margin, y: 31, size: 8, bold: true);
-    _text(
+    _inlineTop(
       content,
-      _money(label.totalValue),
-      x: 70,
-      y: 29,
-      size: 12,
+      'COD VTA: ',
+      _dash(label.saleCenterCode),
+      x: 125,
+      y: top,
+      size: 11,
+      boldValue: true,
+    );
+    top += 14;
+
+    _geoGrid(content, top);
+    top += 101;
+
+    if (_amount(label.cashOnDeliveryValue) > 0) {
+      _arrow(content, x: 176, y: top - 10);
+      top += 10;
+    }
+
+    _qr(content, x: _margin, y: top, size: 80);
+    _textTop(content, 'Valor a cobrar:', x: 111, y: top + 26, size: 11);
+    if (_amount(label.cashOnDeliveryValue) > 0) {
+      _rightTextTop(content, 'PEC', right: 211, y: top + 50, size: 10);
+    }
+    _rightTextTop(
+      content,
+      '\$${label.chargeValue}',
+      right: 211,
+      y: top + 66,
+      size: 20,
       bold: true,
     );
-    _text(
+    _rightTextTop(
       content,
-      'Fecha: ${_date(label.admissionDate)}',
-      x: _margin,
-      y: 16,
-      size: 7,
+      _dash(label.paymentMethod),
+      right: 211,
+      y: top + 88,
+      size: 11,
     );
-    _rightText(content, _date(label.estimatedDeliveryDate), y: 16);
+    top += 105;
+
+    _centerTextTop(
+      content,
+      'www.interrapidisimo.com',
+      center: 108,
+      y: top,
+      size: 10,
+    );
+    top += 12;
+    if (label.offline) {
+      _centerTextTop(content, 'offline', center: 108, y: top, size: 10);
+      top += 12;
+    }
+    if (label.fromReprint) {
+      _centerTextTop(content, 'Reimpresion', center: 108, y: top, size: 7);
+      _watermark(content, centerY: _height / 2);
+    }
 
     return content.toString();
   }
 
-  double _section(StringBuffer content, String title, double y) {
-    _text(content, title, x: _margin, y: y, size: 8, bold: true);
-    _line(content, 12, y - 5, 204, y - 5);
-    return y - 16;
-  }
-
-  double _field(
-    StringBuffer content,
-    String label,
-    String value,
-    double y, {
-    int lines = 1,
+  double _addressBox(
+    StringBuffer content, {
+    required double top,
+    required double height,
+    required String sideLabel,
+    required List<_PdfLine> lines,
   }) {
-    final text = _wrap(_dash(value), lines == 1 ? 28 : 34).take(lines).toList();
-    _text(content, '$label:', x: _margin, y: y, size: 7, bold: true);
-    for (var index = 0; index < text.length; index += 1) {
-      _text(content, text[index], x: 60, y: y - (index * 10), size: 7);
+    _rectTop(content, _margin, top, 212, height);
+    _lineTop(content, 22, top, 22, top + height);
+    _rotatedTextTop(
+      content,
+      sideLabel,
+      x: 9,
+      y: top + (height / 2) + 10,
+      size: 10,
+      bold: true,
+    );
+
+    var lineTop = top + 12;
+    for (final line in lines) {
+      if (line.value.trim().isEmpty) continue;
+      final wrapped = _wrap(line.value, line.maxChars).take(line.maxLines);
+      for (final text in wrapped) {
+        if (lineTop > top + height - 4) break;
+        _textTop(
+          content,
+          text,
+          x: 27,
+          y: lineTop,
+          size: line.size,
+          bold: line.bold,
+        );
+        lineTop += line.size + 2.2;
+      }
     }
-    return y - (math.max(1, text.length) * 10);
+    return top + height;
   }
 
-  void _text(
+  void _routeTable(StringBuffer content, double top) {
+    const widths = [53.0, 38.0, 30.0, 30.0, 30.0, 30.0];
+    final xs = <double>[_margin];
+    for (var index = 1; index < widths.length; index += 1) {
+      xs.add(xs[index - 1] + widths[index - 1]);
+    }
+    final stops = List<VenderPrintRouteStop>.generate(5, (index) {
+      if (index < label.routeStops.length) return label.routeStops[index];
+      return const VenderPrintRouteStop(shortCity: '', locker: '', door: '');
+    });
+
+    _lineTop(content, xs[1], top + 10, xs[1], top + 60);
+    _lineTop(content, 214, top + 10, 214, top + 60);
+    _textTop(content, 'RUTA', x: xs[0] + 5, y: top + 20, size: 9, bold: true);
+    _textTop(
+      content,
+      'CASILLA',
+      x: xs[0] + 5,
+      y: top + 40,
+      size: 9,
+      bold: true,
+    );
+    _textTop(content, 'PUERTA', x: xs[0] + 5, y: top + 60, size: 9, bold: true);
+
+    for (var index = 0; index < stops.length; index += 1) {
+      final col = index + 1;
+      final start = xs[col];
+      final center = start + (widths[col] / 2);
+      _centerTextTop(
+        content,
+        stops[index].shortCity,
+        center: center,
+        y: top + 20,
+        size: 12,
+        bold: true,
+      );
+      _centerTextTop(
+        content,
+        stops[index].locker,
+        center: center,
+        y: top + 38,
+        size: 12,
+        bold: true,
+      );
+      _lineTop(content, start + 4, top + 42, start + widths[col] - 4, top + 42);
+      _centerTextTop(
+        content,
+        stops[index].door,
+        center: center,
+        y: top + 58,
+        size: 12,
+        bold: true,
+      );
+    }
+  }
+
+  void _geoGrid(StringBuffer content, double top) {
+    final headers = label.hasRetirementWindow
+        ? const ['NODO', 'ZO.PAMI', 'RO']
+        : const ['NODO', 'ZO.PAMI', 'MANZANA'];
+    final rows = [
+      headers,
+      [label.geoGrid.node, label.geoGrid.zone, label.geoGrid.block],
+      const ['SAT.DIA', 'SAT.24H', 'SAT.NODO'],
+      [
+        label.geoGrid.satelliteDay,
+        label.geoGrid.satellite24h,
+        label.geoGrid.satelliteNode,
+      ],
+    ];
+    const cellWidth = 70.0;
+    const rowHeights = [15.0, 30.0, 15.0, 30.0];
+    var rowTop = top;
+    _rectTop(content, _margin, top, cellWidth * 3, 90);
+    for (var row = 0; row < rows.length; row += 1) {
+      final height = rowHeights[row];
+      for (var col = 0; col < 3; col += 1) {
+        final left = _margin + (col * cellWidth);
+        _lineTop(content, left, rowTop, left, rowTop + height);
+        _centerTextTop(
+          content,
+          _dash(rows[row][col]),
+          center: left + (cellWidth / 2),
+          y: rowTop + (height / 2) + (row.isEven ? 3 : 5),
+          size: row.isEven ? 9 : 13,
+          bold: true,
+        );
+      }
+      rowTop += height;
+      _lineTop(content, _margin, rowTop, _margin + (cellWidth * 3), rowTop);
+    }
+  }
+
+  void _serviceMark(
+    StringBuffer content, {
+    required double x,
+    required double y,
+  }) {
+    _rectTop(content, x, y, 34, 34);
+    _centerTextTop(
+      content,
+      _initials(label.serviceName),
+      center: x + 17,
+      y: y + 22,
+      size: 12,
+      bold: true,
+    );
+  }
+
+  void _arrow(StringBuffer content, {required double x, required double y}) {
+    _lineTop(content, x, y + 10, x + 22, y + 10);
+    _lineTop(content, x + 22, y + 10, x + 14, y + 4);
+    _lineTop(content, x + 22, y + 10, x + 14, y + 16);
+    _rectTop(content, x - 2, y - 2, 30, 24);
+  }
+
+  void _qr(
+    StringBuffer content, {
+    required double x,
+    required double y,
+    required double size,
+  }) {
+    _rectTop(content, x, y, size, size);
+    const modules = 25;
+    final cell = size / modules;
+    final seed = label.displayGuide.codeUnits.fold<int>(
+      17,
+      (hash, code) => hash * 31 + code,
+    );
+    _qrFinder(content, x, y, cell, 1, 1);
+    _qrFinder(content, x, y, cell, 17, 1);
+    _qrFinder(content, x, y, cell, 1, 17);
+    for (var row = 0; row < modules; row += 1) {
+      for (var col = 0; col < modules; col += 1) {
+        if (_insideQrFinder(col, row)) continue;
+        final mixed = seed + col * 13 + row * 29 + col * row;
+        if (mixed % 5 == 0 || mixed % 7 == 0) {
+          _rectTop(
+            content,
+            x + (col * cell),
+            y + (row * cell),
+            cell,
+            cell,
+            fill: true,
+          );
+        }
+      }
+    }
+  }
+
+  void _qrFinder(
+    StringBuffer content,
+    double x,
+    double y,
+    double cell,
+    int col,
+    int row,
+  ) {
+    _rectTop(
+      content,
+      x + col * cell,
+      y + row * cell,
+      cell * 7,
+      cell * 7,
+      fill: true,
+    );
+    _rectTop(
+      content,
+      x + (col + 1) * cell,
+      y + (row + 1) * cell,
+      cell * 5,
+      cell * 5,
+      fillWhite: true,
+    );
+    _rectTop(
+      content,
+      x + (col + 2) * cell,
+      y + (row + 2) * cell,
+      cell * 3,
+      cell * 3,
+      fill: true,
+    );
+  }
+
+  bool _insideQrFinder(int x, int y) {
+    return (x >= 1 && x < 8 && y >= 1 && y < 8) ||
+        (x >= 17 && x < 24 && y >= 1 && y < 8) ||
+        (x >= 1 && x < 8 && y >= 17 && y < 24);
+  }
+
+  void _code128(
+    StringBuffer content,
+    String value, {
+    required double x,
+    required double yTop,
+    required double width,
+    required double height,
+  }) {
+    final barcode = Code128Barcode.fromValue(value);
+    final moduleWidth = width / barcode.totalModules;
+    for (final bar in barcode.bars) {
+      _rectTop(
+        content,
+        x + (bar.startModule * moduleWidth),
+        yTop,
+        bar.moduleCount * moduleWidth,
+        height,
+        fill: true,
+      );
+    }
+  }
+
+  void _inlineTop(
+    StringBuffer content,
+    String labelText,
+    String value, {
+    required double x,
+    required double y,
+    required double size,
+    bool boldValue = false,
+  }) {
+    _textTop(content, labelText, x: x, y: y, size: size);
+    _textTop(
+      content,
+      value,
+      x: x + _measure(labelText, size),
+      y: y,
+      size: size,
+      bold: boldValue,
+    );
+  }
+
+  void _textTop(
     StringBuffer content,
     String value, {
     required double x,
@@ -191,57 +606,105 @@ class _PdfLabelDocument {
     required double size,
     bool bold = false,
   }) {
+    final pdfY = _height - y;
     content.writeln(
-      'BT /${bold ? 'F2' : 'F1'} $size Tf $x $y Td (${_pdfText(value)}) Tj ET',
+      'BT /${bold ? 'F2' : 'F1'} ${_n(size)} Tf ${_n(x)} ${_n(pdfY)} Td (${_pdfText(value)}) Tj ET',
     );
   }
 
-  void _rightText(StringBuffer content, String value, {required double y}) {
-    final text = _pdfText(value);
-    final x = math.max(_margin, _width - _margin - (text.length * 4.5));
-    _text(content, text, x: x.toDouble(), y: y, size: 7, bold: true);
-  }
-
-  void _line(StringBuffer content, double x1, double y1, double x2, double y2) {
-    content.writeln('$x1 $y1 m $x2 $y2 l S');
-  }
-
-  void _code39(
+  void _rotatedTextTop(
     StringBuffer content,
     String value, {
     required double x,
     required double y,
-    required double width,
-    required double height,
+    required double size,
+    bool bold = false,
   }) {
-    final encoded = '*${value.replaceAll(RegExp(r'[^0-9A-Z\\-\\. ]'), '')}*';
-    final modules = encoded.split('').fold<int>(0, (total, char) {
-      final pattern = _code39Patterns[char] ?? _code39Patterns['*']!;
-      return total +
-          pattern
-              .split('')
-              .fold<int>(
-                0,
-                (subtotal, item) => subtotal + (item == 'w' ? 3 : 1),
-              ) +
-          1;
-    });
-    final narrow = math.max(0.55, width / modules);
-    var cursor = x;
-    for (final char in encoded.split('')) {
-      final pattern = _code39Patterns[char] ?? _code39Patterns['*']!;
-      for (var i = 0; i < pattern.length; i += 1) {
-        final elementWidth = narrow * (pattern[i] == 'w' ? 3 : 1);
-        if (i.isEven) {
-          content.writeln(
-            '${cursor.toStringAsFixed(2)} ${y.toStringAsFixed(2)} '
-            '${elementWidth.toStringAsFixed(2)} ${height.toStringAsFixed(2)} re f',
-          );
-        }
-        cursor += elementWidth;
-      }
-      cursor += narrow;
+    final pdfY = _height - y;
+    content.writeln(
+      'BT /${bold ? 'F2' : 'F1'} ${_n(size)} Tf 0 -1 1 0 ${_n(x)} ${_n(pdfY)} Tm (${_pdfText(value)}) Tj ET',
+    );
+  }
+
+  void _rightTextTop(
+    StringBuffer content,
+    String value, {
+    required double right,
+    required double y,
+    required double size,
+    bool bold = false,
+  }) {
+    final x = right - _measure(value, size);
+    _textTop(
+      content,
+      value,
+      x: math.max(_margin, x),
+      y: y,
+      size: size,
+      bold: bold,
+    );
+  }
+
+  void _centerTextTop(
+    StringBuffer content,
+    String value, {
+    required double center,
+    required double y,
+    required double size,
+    bool bold = false,
+  }) {
+    final x = center - (_measure(value, size) / 2);
+    _textTop(
+      content,
+      value,
+      x: math.max(_margin, x),
+      y: y,
+      size: size,
+      bold: bold,
+    );
+  }
+
+  void _lineTop(
+    StringBuffer content,
+    double x1,
+    double y1,
+    double x2,
+    double y2,
+  ) {
+    content.writeln(
+      '${_n(x1)} ${_n(_height - y1)} m ${_n(x2)} ${_n(_height - y2)} l S',
+    );
+  }
+
+  void _rectTop(
+    StringBuffer content,
+    double x,
+    double y,
+    double width,
+    double height, {
+    bool fill = false,
+    bool fillWhite = false,
+  }) {
+    final pdfY = _height - y - height;
+    if (fillWhite) {
+      content
+        ..writeln('1 1 1 rg')
+        ..writeln('${_n(x)} ${_n(pdfY)} ${_n(width)} ${_n(height)} re f')
+        ..writeln('0 0 0 rg');
+      return;
     }
+    content.writeln(
+      '${_n(x)} ${_n(pdfY)} ${_n(width)} ${_n(height)} re ${fill ? 'f' : 'S'}',
+    );
+  }
+
+  void _watermark(StringBuffer content, {required double centerY}) {
+    final radians = -55 * math.pi / 180;
+    final cos = math.cos(radians);
+    final sin = math.sin(radians);
+    content.writeln(
+      'BT /F2 42 Tf ${_n(cos)} ${_n(sin)} ${_n(-sin)} ${_n(cos)} 40 ${_n(centerY)} Tm (RE IMPRESION) Tj ET',
+    );
   }
 
   Iterable<String> _wrap(String value, int max) sync* {
@@ -256,17 +719,11 @@ class _PdfLabelDocument {
         yield remaining;
         return;
       }
-      var cut = remaining.lastIndexOf(' ', max);
-      if (cut < 8) cut = max;
-      yield remaining.substring(0, cut).trim();
-      remaining = remaining.substring(cut).trim();
+      var split = remaining.lastIndexOf(' ', max);
+      if (split < 8) split = max;
+      yield remaining.substring(0, split).trim();
+      remaining = remaining.substring(split).trim();
     }
-  }
-
-  String _money(String value) {
-    final parsed = double.tryParse(value.replaceAll(',', '.')) ?? 0;
-    if (parsed <= 0) return r'$ 0';
-    return r'$ ' + parsed.toStringAsFixed(0);
   }
 
   String _date(String value) {
@@ -274,7 +731,69 @@ class _PdfLabelDocument {
     return value.replaceFirst('T', ' ').split('.').first;
   }
 
+  String _dateTime(String value) {
+    if (value.trim().isEmpty) return '-';
+    final clean = value.replaceFirst('T', ' ').split('.').first.trim();
+    return clean.replaceFirst(RegExp(r'\s+'), ' - ');
+  }
+
+  String _dateOnly(String value) {
+    if (value.trim().isEmpty) return '-';
+    return value.replaceFirst('T', ' ').split(' ').first;
+  }
+
   String _dash(String value) => value.trim().isEmpty ? '-' : value.trim();
+
+  String _weight(String value) {
+    final parsed = double.tryParse(value.replaceAll(',', '.'));
+    if (parsed == null) return _dash(value);
+    if (parsed % 1 == 0) return parsed.toStringAsFixed(0);
+    return parsed.toString();
+  }
+
+  String _firstFilled(List<String> values) {
+    for (final value in values) {
+      if (value.trim().isNotEmpty) return value.trim();
+    }
+    return '-';
+  }
+
+  String _initials(String value) {
+    final parts = _sanitize(value)
+        .split(RegExp(r'\s+'))
+        .where((item) => item.isNotEmpty)
+        .take(2)
+        .map((item) => item.substring(0, 1).toUpperCase())
+        .join();
+    return parts.isEmpty ? 'IR' : parts;
+  }
+
+  double _amount(String value) {
+    final clean = value.replaceAll(r'$', '').replaceAll(' ', '').trim();
+    if (clean.isEmpty) return 0;
+    final commaIndex = clean.lastIndexOf(',');
+    final dotIndex = clean.lastIndexOf('.');
+    var normalized = clean;
+    if (commaIndex >= 0 && dotIndex >= 0) {
+      normalized = commaIndex > dotIndex
+          ? clean.replaceAll('.', '').replaceAll(',', '.')
+          : clean.replaceAll(',', '');
+    } else if (commaIndex >= 0) {
+      final decimals = clean.length - commaIndex - 1;
+      normalized = decimals == 3
+          ? clean.replaceAll(',', '')
+          : clean.replaceAll(',', '.');
+    } else if (dotIndex >= 0) {
+      final decimals = clean.length - dotIndex - 1;
+      normalized = decimals == 3 ? clean.replaceAll('.', '') : clean;
+    }
+    normalized = normalized.replaceAll(RegExp(r'[^0-9\.-]'), '');
+    return double.tryParse(normalized) ?? 0;
+  }
+
+  double _measure(String value, double size) {
+    return _sanitize(value).length * size * 0.58;
+  }
 
   String _pdfText(String value) {
     return _sanitize(
@@ -307,51 +826,24 @@ class _PdfLabelDocument {
         .join()
         .trim();
   }
+
+  String _n(num value) {
+    return value.toStringAsFixed(2);
+  }
 }
 
-const _code39Patterns = <String, String>{
-  '0': 'nnnwwnwnn',
-  '1': 'wnnwnnnnw',
-  '2': 'nnwwnnnnw',
-  '3': 'wnwwnnnnn',
-  '4': 'nnnwwnnnw',
-  '5': 'wnnwwnnnn',
-  '6': 'nnwwwnnnn',
-  '7': 'nnnwnnwnw',
-  '8': 'wnnwnnwnn',
-  '9': 'nnwwnnwnn',
-  'A': 'wnnnnwnnw',
-  'B': 'nnwnnwnnw',
-  'C': 'wnwnnwnnn',
-  'D': 'nnnnwwnnw',
-  'E': 'wnnnwwnnn',
-  'F': 'nnwnwwnnn',
-  'G': 'nnnnnwwnw',
-  'H': 'wnnnnwwnn',
-  'I': 'nnwnnwwnn',
-  'J': 'nnnnwwwnn',
-  'K': 'wnnnnnnww',
-  'L': 'nnwnnnnww',
-  'M': 'wnwnnnnwn',
-  'N': 'nnnnwnnww',
-  'O': 'wnnnwnnwn',
-  'P': 'nnwnwnnwn',
-  'Q': 'nnnnnnwww',
-  'R': 'wnnnnnwwn',
-  'S': 'nnwnnnwwn',
-  'T': 'nnnnwnwwn',
-  'U': 'wwnnnnnnw',
-  'V': 'nwwnnnnnw',
-  'W': 'wwwnnnnnn',
-  'X': 'nwnnwnnnw',
-  'Y': 'wwnnwnnnn',
-  'Z': 'nwwnwnnnn',
-  '-': 'nwnnnnwnw',
-  '.': 'wwnnnnwnn',
-  ' ': 'nwwnnnwnn',
-  r'$': 'nwnwnwnnn',
-  '/': 'nwnwnnnwn',
-  '+': 'nwnnnwnwn',
-  '%': 'nnnwnwnwn',
-  '*': 'nwnnwnwnn',
-};
+class _PdfLine {
+  const _PdfLine(
+    this.value, {
+    required this.size,
+    required this.maxChars,
+    this.bold = false,
+    this.maxLines = 1,
+  });
+
+  final String value;
+  final double size;
+  final int maxChars;
+  final bool bold;
+  final int maxLines;
+}

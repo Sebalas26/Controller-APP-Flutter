@@ -165,6 +165,33 @@ class ControllerNativeBridge {
     }
   }
 
+  Future<bool> printSewooTest() async {
+    try {
+      return await _channel.invokeMethod<bool>('printSewooTest') ?? false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException catch (e) {
+      debugPrint(
+        'printSewooTest - PlatformException: ${e.code} - ${e.message}',
+      );
+      return false;
+    }
+  }
+
+  Future<String> printSewooTestDiagnostics() async {
+    try {
+      return await _channel.invokeMethod<String>('printSewooTestDiagnostics') ??
+          'Sin respuesta nativa.';
+    } on MissingPluginException {
+      return 'Metodo nativo printSewooTestDiagnostics no implementado.';
+    } on PlatformException catch (e) {
+      debugPrint(
+        'printSewooTestDiagnostics - PlatformException: ${e.code} - ${e.message}',
+      );
+      return 'Error nativo ${e.code}: ${e.message ?? 'sin detalle'}';
+    }
+  }
+
   Future<bool> openPdfFile(String filePath) async {
     try {
       return await _channel.invokeMethod<bool>('openPdfFile', {

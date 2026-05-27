@@ -14,11 +14,9 @@ class RecogerRemoteRepository {
     Dio? dio,
     ControllerHttpClient? httpClient,
     ControllerIdKeyProvider? idKeyProvider,
-  }) : _dio = dio ?? Dio(),
-       _httpClient = httpClient ?? ControllerHttpClient(dio: dio),
+  }) : _httpClient = httpClient ?? ControllerHttpClient(dio: dio),
        _idKeyProvider = idKeyProvider ?? ControllerIdKeyProvider(dio: dio);
 
-  final Dio _dio;
   final ControllerHttpClient _httpClient;
   final ControllerIdKeyProvider _idKeyProvider;
 

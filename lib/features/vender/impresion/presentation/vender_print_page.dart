@@ -7,6 +7,7 @@ import '../data/vender_print_local_repository.dart';
 import '../models/print_label_models.dart';
 import '../services/print_device_service.dart';
 import '../services/print_label_pdf_service.dart';
+import 'print_label_preview_page.dart';
 import 'widgets/print_label_preview.dart';
 
 class VenderPrintPage extends StatefulWidget {
@@ -34,6 +35,7 @@ class _VenderPrintPageState extends State<VenderPrintPage> {
   bool _loading = true;
   bool _printing = false;
   String? _message;
+  bool _messageIsError = false;
   String? _error;
   File? _lastPdf;
 
@@ -57,7 +59,8 @@ class _VenderPrintPageState extends State<VenderPrintPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
               children: [
-                if (_message != null) _Banner(message: _message!, error: false),
+                if (_message != null)
+                  _Banner(message: _message!, error: _messageIsError),
                 if (_error != null) _Banner(message: _error!, error: true),
                 PrintLabelPreview(label: label),
               ],
@@ -125,8 +128,11 @@ class _VenderPrintPageState extends State<VenderPrintPage> {
     await _runPrinting(() async {
       final file = await _createPdf();
       if (file == null) return;
-      await _deviceService.openPdfFile(file.path);
-      _message = 'PDF generado: ${file.path}';
+      _message = 'PDF generado correctamente.';
+      _messageIsError = false;
+      if (mounted) {
+        await _openPreview(file, 'PDF generado correctamente.');
+      }
     });
   }
 
@@ -134,22 +140,39 @@ class _VenderPrintPageState extends State<VenderPrintPage> {
     await _runPrinting(() async {
       final file = await _createPdf();
       if (file == null) return;
-      final hasPrinter = await _deviceService.hasBluetoothPrinter();
-      if (hasPrinter) {
-        final printed = await _deviceService.printPdfFile(
-          file.path,
-          jobName: 'Etiqueta ${_label!.displayGuide}',
-        );
-        _message = printed
-            ? 'Etiqueta enviada a impresion.'
-            : 'No fue posible abrir la impresion. Se genero el PDF.';
-        if (!printed) await _deviceService.openPdfFile(file.path);
-      } else {
-        await _deviceService.openPdfFile(file.path);
-        _message =
-            'No se detecto impresora Bluetooth conectada. Se genero el PDF.';
+      final printed = await _deviceService.printPdfFile(
+        file.path,
+        jobName: 'Etiqueta ${_label!.displayGuide}',
+      );
+      _message = printed
+          ? 'Etiqueta enviada a impresion.'
+          : Platform.isIOS
+          ? 'No fue posible imprimir en la SEWO LK-P25. Verifica que este encendida y enlazada por Bluetooth; puedes revisar la etiqueta aqui.'
+          : 'No fue posible imprimir en la SEWO. Puedes revisar la etiqueta aqui.';
+      _messageIsError = !printed;
+      if (mounted) {
+        await _openPreview(file, _message, isError: !printed);
       }
     });
+  }
+
+  Future<void> _openPreview(
+    File file,
+    String? message, {
+    bool isError = false,
+  }) {
+    final label = _label;
+    if (label == null) return Future<void>.value();
+    return Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PrintLabelPreviewPage(
+          label: label,
+          pdfFile: file,
+          initialMessage: message,
+          initialMessageIsError: isError,
+        ),
+      ),
+    );
   }
 
   Future<void> _runPrinting(Future<void> Function() action) async {
@@ -157,14 +180,19 @@ class _VenderPrintPageState extends State<VenderPrintPage> {
       _printing = true;
       _error = null;
       _message = null;
+      _messageIsError = false;
     });
     try {
       await action();
     } on Object catch (error) {
       _error = error.toString();
       final file = _lastPdf;
-      if (file != null) {
-        await _deviceService.openPdfFile(file.path);
+      if (file != null && mounted) {
+        await _openPreview(
+          file,
+          'No fue posible imprimir. Puedes revisar la etiqueta aqui.',
+          isError: true,
+        );
       }
     } finally {
       if (mounted) setState(() => _printing = false);

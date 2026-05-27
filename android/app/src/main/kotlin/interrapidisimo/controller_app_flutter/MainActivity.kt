@@ -3,6 +3,7 @@ package interrapidisimo.controller_app_flutter
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothClass
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
@@ -11,6 +12,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
 import android.os.CancellationSignal
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -22,9 +24,15 @@ import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import android.print.PrintManager
 import android.util.Base64
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import com.sewoo.jpos.command.ESCPOSConst
+import com.sewoo.jpos.printer.ESCPOSPrinter
+import com.sewoo.jpos.printer.LKPrint
+import com.sewoo.port.android.BluetoothPort
+import com.sewoo.request.android.RequestHandler
 import com.google.zxing.integration.android.IntentIntegrator
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
@@ -39,6 +47,8 @@ import kotlin.math.roundToInt
 class MainActivity : FlutterActivity() {
     private var pendingPhotoResult: MethodChannel.Result? = null
     private var pendingQrResult: MethodChannel.Result? = null
+    private var pendingBluetoothPrintCall: MethodCall? = null
+    private var pendingBluetoothPrintResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -62,6 +72,8 @@ class MainActivity : FlutterActivity() {
                 "getYaapPasswordProduccion" -> result.success(BuildConfig.YAAP_PASSWORD)
                 "hasBluetoothPrinter" -> result.success(hasBluetoothPrinter())
                 "printPdfFile" -> printPdfFile(call, result)
+                "printSewooTest" -> printSewooTest(call, result)
+                "printSewooTestDiagnostics" -> printSewooTestDiagnostics(call, result)
                 "openPdfFile" -> openPdfFile(call, result)
                 else -> result.notImplemented()
             }
@@ -90,6 +102,27 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_BLUETOOTH_PRINT) {
+            val pendingCall = pendingBluetoothPrintCall
+            val pendingResult = pendingBluetoothPrintResult
+            pendingBluetoothPrintCall = null
+            pendingBluetoothPrintResult = null
+            if (pendingCall == null || pendingResult == null) return
+
+            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                if (pendingCall.method == "printSewooTest") {
+                    printSewooTest(pendingCall, pendingResult)
+                } else if (pendingCall.method == "printSewooTestDiagnostics") {
+                    printSewooTestDiagnostics(pendingCall, pendingResult)
+                } else {
+                    printPdfFile(pendingCall, pendingResult)
+                }
+            } else {
+                pendingResult.success(false)
+            }
+            return
+        }
+
         if (requestCode != PERMISSION_REQUEST_CAMERA) return
 
         val pending = pendingPhotoResult ?: return
@@ -342,38 +375,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun hasBluetoothPrinter(): Boolean {
-        return try {
-            val adapter = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                getSystemService(BluetoothManager::class.java)?.adapter
-            } else {
-                @Suppress("DEPRECATION")
-                BluetoothAdapter.getDefaultAdapter()
-            } ?: return false
-
-            if (!adapter.isEnabled) return false
-            if (
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.BLUETOOTH_CONNECT
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                return false
-            }
-
-            adapter.bondedDevices.any { device ->
-                val majorClass = device.bluetoothClass?.majorDeviceClass
-                val name = device.name.orEmpty()
-                val looksLikePrinter =
-                    majorClass == BluetoothClass.Device.Major.IMAGING ||
-                        name.contains("SW_", ignoreCase = true) ||
-                        name.contains("printer", ignoreCase = true) ||
-                        name.contains("impresora", ignoreCase = true)
-                looksLikePrinter && isBluetoothDeviceConnected(device)
-            }
-        } catch (_: Exception) {
-            false
-        }
+        return findSewooPrinterDevices().isNotEmpty()
     }
 
     private fun isBluetoothDeviceConnected(device: android.bluetooth.BluetoothDevice): Boolean {
@@ -392,21 +394,343 @@ class MainActivity : FlutterActivity() {
                 result.success(false)
                 return
             }
-            val printManager = getSystemService(Context.PRINT_SERVICE) as? PrintManager
-            if (printManager == null) {
-                result.success(false)
-                return
-            }
-            val jobName = call.argument<String>("jobName").orEmpty()
-                .ifBlank { "Etiqueta Controller" }
-            val attributes = PrintAttributes.Builder()
-                .setMediaSize(PrintAttributes.MediaSize.ISO_A7)
-                .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
-                .build()
-            printManager.print(jobName, PdfFilePrintAdapter(file), attributes)
-            result.success(true)
+            if (!ensureBluetoothPrintPermission(call, result)) return
+
+            Thread {
+                val printed = try {
+                    printSewooPdfFile(file)
+                } catch (_: Exception) {
+                    false
+                }
+                runOnUiThread { result.success(printed) }
+            }.start()
         } catch (e: Exception) {
             result.error("PRINT_ERROR", e.message ?: "No fue posible imprimir", null)
+        }
+    }
+
+    private fun printSewooTest(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            if (!ensureBluetoothPrintPermission(call, result)) return
+
+            Thread {
+                val printed = try {
+                    printSewooTestTicket()
+                } catch (_: Exception) {
+                    false
+                }
+                runOnUiThread { result.success(printed) }
+            }.start()
+        } catch (e: Exception) {
+            result.error("PRINT_TEST_ERROR", e.message ?: "No fue posible imprimir prueba SEWO", null)
+        }
+    }
+
+    private fun printSewooTestDiagnostics(call: MethodCall, result: MethodChannel.Result) {
+        try {
+            if (!ensureBluetoothPrintPermission(call, result)) return
+
+            Thread {
+                val devices = findSewooPrinterDevices()
+                val printed = try {
+                    printSewooTestTicket()
+                } catch (_: Exception) {
+                    false
+                }
+                val message = buildString {
+                    appendLine("INICIO diagnostico SEWO Android")
+                    appendLine("Dispositivos candidatos: ${devices.size}")
+                    devices.forEach { device ->
+                        appendLine("- ${device.name.orEmpty()} ${device.address}")
+                    }
+                    appendLine(if (printed) "RESULTADO: OK" else "RESULTADO: ERROR - prueba no impresa")
+                }
+                runOnUiThread { result.success(message) }
+            }.start()
+        } catch (e: Exception) {
+            result.error("PRINT_TEST_ERROR", e.message ?: "No fue posible diagnosticar SEWO", null)
+        }
+    }
+
+    private fun ensureBluetoothPrintPermission(
+        call: MethodCall,
+        result: MethodChannel.Result
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val requiredPermissions = requiredBluetoothPrintPermissions()
+        val missingPermissions = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missingPermissions.isEmpty()) return true
+        if (pendingBluetoothPrintResult != null) {
+            result.success(false)
+            return false
+        }
+        pendingBluetoothPrintCall = call
+        pendingBluetoothPrintResult = result
+        ActivityCompat.requestPermissions(
+            this,
+            missingPermissions.toTypedArray(),
+            PERMISSION_REQUEST_BLUETOOTH_PRINT
+        )
+        return false
+    }
+
+    private fun printSewooPdfFile(file: File): Boolean {
+        val devices = findSewooPrinterDevices()
+        if (devices.isEmpty()) return false
+
+        for (device in devices) {
+            if (printSewooPdfFileToDevice(file, device)) return true
+        }
+        return false
+    }
+
+    private fun printSewooTestTicket(): Boolean {
+        val devices = findSewooPrinterDevices()
+        if (devices.isEmpty()) return false
+
+        for (device in devices) {
+            for (mode in SewooConnectMode.entries) {
+                if (printSewooTestToDevice(device, mode)) return true
+            }
+        }
+        return false
+    }
+
+    private fun printSewooTestToDevice(device: BluetoothDevice, mode: SewooConnectMode): Boolean {
+        val bluetoothPort = BluetoothPort.getInstance()
+        bluetoothPort.SetMacFilter(false)
+        var requestThread: Thread? = null
+        return try {
+            if (bluetoothPort.isConnected()) {
+                bluetoothPort.disconnect()
+            }
+            Log.d(
+                TAG,
+                "Intentando prueba SEWO ${mode.name}: ${device.name.orEmpty()} - ${device.address}"
+            )
+            when (mode) {
+                SewooConnectMode.DEFAULT -> bluetoothPort.connect(device)
+                SewooConnectMode.INSECURE -> bluetoothPort.connectInsecure(device)
+                SewooConnectMode.SECURE -> bluetoothPort.connectSecure(device)
+            }
+            requestThread = Thread(RequestHandler()).apply { start() }
+            Thread.sleep(700)
+
+            val printer = ESCPOSPrinter()
+            printer.printText(
+                "Controller App\nPrueba SEWO LK-P25\nAndroid\n",
+                LKPrint.LK_ALIGNMENT_CENTER,
+                ESCPOSConst.LK_FNT_DEFAULT,
+                ESCPOSConst.LK_TXT_1WIDTH
+            )
+            printer.lineFeed(4)
+            true
+        } catch (exception: Exception) {
+            Log.w(TAG, "Prueba SEWO fallo en ${device.address} con ${mode.name}: ${exception.message}")
+            false
+        } finally {
+            try {
+                if (bluetoothPort.isConnected()) bluetoothPort.disconnect()
+            } catch (_: Exception) {
+                // Ignore disconnect errors.
+            }
+            requestThread?.interrupt()
+        }
+    }
+
+    private fun printSewooPdfFileToDevice(file: File, device: BluetoothDevice): Boolean {
+        val modes = listOf(
+            SewooConnectMode.DEFAULT,
+            SewooConnectMode.INSECURE,
+            SewooConnectMode.SECURE
+        )
+        for (mode in modes) {
+            if (printSewooPdfFileToDevice(file, device, mode)) return true
+        }
+        return false
+    }
+
+    private fun printSewooPdfFileToDevice(
+        file: File,
+        device: BluetoothDevice,
+        mode: SewooConnectMode
+    ): Boolean {
+        val bluetoothPort = BluetoothPort.getInstance()
+        bluetoothPort.SetMacFilter(false)
+        var requestThread: Thread? = null
+        return try {
+            if (bluetoothPort.isConnected()) {
+                bluetoothPort.disconnect()
+            }
+            Log.d(
+                TAG,
+                "Intentando imprimir en Bluetooth ${mode.name}: ${device.name.orEmpty()} - ${device.address}"
+            )
+            when (mode) {
+                SewooConnectMode.DEFAULT -> bluetoothPort.connect(device)
+                SewooConnectMode.INSECURE -> bluetoothPort.connectInsecure(device)
+                SewooConnectMode.SECURE -> bluetoothPort.connectSecure(device)
+            }
+            requestThread = Thread(RequestHandler()).apply { start() }
+            Thread.sleep(700)
+
+            val printer = ESCPOSPrinter()
+            val status = sewooPrinterStatus(printer)
+            if (status != ESCPOSConst.LK_SUCCESS) return false
+
+            printPdfToSewooPrinter(
+                printer = printer,
+                file = file,
+                alignment = LKPrint.LK_ALIGNMENT_CENTER,
+                paperSize = LKPrint.LK_PAPER_2INCH,
+                feed = 2
+            )
+        } catch (exception: Exception) {
+            Log.w(TAG, "No fue posible imprimir en ${device.address} con ${mode.name}: ${exception.message}")
+            false
+        } finally {
+            try {
+                if (bluetoothPort.isConnected()) bluetoothPort.disconnect()
+            } catch (_: Exception) {
+                // Ignore disconnect errors.
+            }
+            requestThread?.interrupt()
+        }
+    }
+
+    private fun findSewooPrinterDevices(): List<BluetoothDevice> {
+        return try {
+            val adapter = bluetoothAdapter() ?: return emptyList()
+            if (!adapter.isEnabled || !hasBluetoothConnectPermission()) return emptyList()
+            val bluetoothPort = BluetoothPort.getInstance()
+            bluetoothPort.SetMacFilter(false)
+            val bondedDevices = adapter.bondedDevices
+                .filter { device -> bluetoothPort.isValidAddress(device.address) }
+            val preferredDevices = bondedDevices.filter { device -> looksLikeSewooPrinter(device) }
+            val fallbackDevices = bondedDevices.filterNot { device ->
+                preferredDevices.any { preferred -> preferred.address == device.address }
+            }
+            (preferredDevices + fallbackDevices).distinctBy { device -> device.address }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun bluetoothAdapter(): BluetoothAdapter? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            getSystemService(BluetoothManager::class.java)?.adapter
+        } else {
+            @Suppress("DEPRECATION")
+            BluetoothAdapter.getDefaultAdapter()
+        }
+    }
+
+    private fun hasBluetoothConnectPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            requiredBluetoothPrintPermissions().all {
+                ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+            }
+    }
+
+    private fun requiredBluetoothPrintPermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+                android.Manifest.permission.BLUETOOTH_SCAN
+            )
+        } else {
+            emptyArray()
+        }
+    }
+
+    private fun looksLikeSewooPrinter(device: BluetoothDevice): Boolean {
+        val majorClass = device.bluetoothClass?.majorDeviceClass
+        val name = device.name.orEmpty()
+        return majorClass == BluetoothClass.Device.Major.IMAGING ||
+            name.contains("SW_", ignoreCase = true) ||
+            name.contains("SEWOO", ignoreCase = true) ||
+            name.contains("LK-P", ignoreCase = true) ||
+            name.contains("LK", ignoreCase = true) ||
+            name.contains("printer", ignoreCase = true) ||
+            name.contains("impresora", ignoreCase = true)
+    }
+
+    private fun sewooPrinterStatus(posPtr: ESCPOSPrinter): Int {
+        val returnValue = posPtr.printerCheck()
+        if (returnValue == ESCPOSConst.LK_SUCCESS) {
+            val status = posPtr.status()
+            if (status == ESCPOSConst.LK_STS_NORMAL) {
+                return ESCPOSConst.LK_SUCCESS
+            }
+            if ((ESCPOSConst.LK_STS_COVER_OPEN and status) > 0) return ESCPOSConst.LK_STS_COVER_OPEN
+            if ((ESCPOSConst.LK_STS_PAPER_EMPTY and status) > 0) return ESCPOSConst.LK_STS_PAPER_EMPTY
+            if ((ESCPOSConst.LK_STS_BATTERY_LOW and status) > 0) return ESCPOSConst.LK_STS_BATTERY_LOW
+        }
+        return returnValue
+    }
+
+    private fun printPdfToSewooPrinter(
+        printer: ESCPOSPrinter,
+        file: File,
+        alignment: Int,
+        paperSize: Int,
+        feed: Int
+    ): Boolean {
+        if (!file.exists() || Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return false
+        }
+
+        val sdkPdfResult = try {
+            printer.printPDFFile(file, 1, paperSize, alignment)
+        } catch (_: Exception) {
+            -1
+        }
+        if (sdkPdfResult == ESCPOSConst.LK_SUCCESS) {
+            printer.lineFeed(feed)
+            return true
+        }
+
+        val pdfDescriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        val renderer = PdfRenderer(pdfDescriptor)
+        val page = renderer.openPage(0)
+        try {
+            var pageWidth = page.width * 6
+            var pageHeight = page.height * 6
+
+            if (pageHeight > MAX_SEWOO_BITMAP_SIZE) {
+                pageWidth = (MAX_SEWOO_BITMAP_SIZE.toDouble() / pageHeight * pageWidth).toInt()
+                pageHeight = MAX_SEWOO_BITMAP_SIZE
+            }
+            if (pageWidth > MAX_SEWOO_BITMAP_SIZE) {
+                pageHeight = (MAX_SEWOO_BITMAP_SIZE.toDouble() / pageWidth * pageHeight).toInt()
+                pageWidth = MAX_SEWOO_BITMAP_SIZE
+            }
+
+            val renderedBitmap = Bitmap.createBitmap(pageWidth, pageHeight, Bitmap.Config.ARGB_8888)
+            renderedBitmap.eraseColor(Color.WHITE)
+            page.render(renderedBitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+
+            val finalPaperWidth = paperSize
+            val scaledHeight = (finalPaperWidth.toDouble() / renderedBitmap.width * renderedBitmap.height)
+                .toInt()
+                .coerceAtLeast(1)
+            val printableBitmap = Bitmap.createScaledBitmap(
+                renderedBitmap,
+                finalPaperWidth,
+                scaledHeight,
+                true
+            )
+
+            val bitmapResult = printer.printBitmap(printableBitmap, alignment, finalPaperWidth)
+            if (bitmapResult != ESCPOSConst.LK_SUCCESS) return false
+            printer.lineFeed(feed)
+            return true
+        } finally {
+            page.close()
+            renderer.close()
+            pdfDescriptor.close()
         }
     }
 
@@ -483,6 +807,8 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val REQUEST_PACKAGE_PHOTO = 4011
         private const val PERMISSION_REQUEST_CAMERA = 4012
+        private const val PERMISSION_REQUEST_BLUETOOTH_PRINT = 4013
+        private const val TAG = "ControllerNative"
         private const val PHOTO_MAX_DIMENSION = 480
         private const val PHOTO_JPEG_QUALITY = 35
         private const val PHOTO_MAX_BASE64_LENGTH = 45 * 1024
@@ -491,5 +817,12 @@ class MainActivity : FlutterActivity() {
         private const val MIN_JPEG_QUALITY = 8
         private const val MAX_JPEG_QUALITY = 100
         private const val JPEG_QUALITY_STEP = 7
+        private const val MAX_SEWOO_BITMAP_SIZE = 8200
+    }
+
+    private enum class SewooConnectMode {
+        DEFAULT,
+        INSECURE,
+        SECURE
     }
 }
