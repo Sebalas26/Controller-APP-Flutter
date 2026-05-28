@@ -67,6 +67,15 @@ class BloquesLocalRepository {
     });
   }
 
+  Future<void> clearCourierAndDeliveries() async {
+    final db = await _openDatabase();
+    await _ensureTables(db);
+    await db.transaction((txn) async {
+      await txn.delete('yaap_courier_cache');
+      await txn.delete('yaap_deliveries_cache');
+    });
+  }
+
   Future<List<YaapPendingBlock>> loadPendingBlocks() async {
     final db = await _openDatabase();
     await _ensureTables(db);

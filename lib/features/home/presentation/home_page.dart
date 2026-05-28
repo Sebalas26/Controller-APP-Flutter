@@ -1,12 +1,10 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/config/app_environment.dart';
 import '../../../shared/constants/app_assets.dart';
-import '../../../shared/theme/app_colors.dart';
-import '../../vender/impresion/services/print_device_service.dart';
+import '../../login/login.dart' show ModuleApp;
 import '../models/controller_session.dart';
 import '../models/home_module.dart';
 import 'environment_page.dart';
@@ -39,8 +37,6 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _guideController = TextEditingController();
-  final _printDeviceService = PrintDeviceService();
-  bool _printingSewooTest = false;
 
   @override
   void dispose() {
@@ -80,53 +76,49 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _printSewooTest() async {
-    if (_printingSewooTest) return;
-    setState(() => _printingSewooTest = true);
-    try {
-      final diagnostics = await _printDeviceService.printSewooTestDiagnostics();
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Diagnostico SEWO'),
-          content: SingleChildScrollView(
-            child: SelectableText(
-              diagnostics,
-              style: const TextStyle(fontSize: 13, height: 1.3),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cerrar'),
-            ),
-          ],
-        ),
-      );
-      final printed = diagnostics.contains('RESULTADO: OK');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            printed
-                ? 'Prueba SEWO enviada correctamente.'
-                : 'Diagnostico SEWO finalizado con error.',
-          ),
-          backgroundColor: printed ? const Color(0xFF01623D) : Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _printingSewooTest = false);
+  List<AppModule> _configuredModules({required bool primary}) {
+    final nativeModules = widget.session.modules;
+    if (nativeModules.isEmpty) {
+      return appModules.where((item) => item.primary == primary).toList();
     }
+
+    final filtered =
+        nativeModules
+            .where((item) => item.visible && item.primary == primary)
+            .toList()
+          ..sort((a, b) => a.order.compareTo(b.order));
+
+    return filtered.map(_moduleFromNative).toList();
+  }
+
+  AppModule _moduleFromNative(ModuleApp native) {
+    final definition = appModuleByNativeName(native.name);
+    final module =
+        definition ??
+        AppModule(
+          id: 'native_${native.id}',
+          title: native.name.trim().isEmpty ? 'Modulo' : native.name.trim(),
+          icon: Icons.grid_view_outlined,
+          legacyRoute: native.name,
+          nativeNames: [native.name],
+        );
+
+    return module.copyWith(
+      primary: native.primary,
+      enabled: native.enabled,
+      showNew: _isNativeNewModule(native.newDate),
+    );
+  }
+
+  bool _isNativeNewModule(String value) {
+    if (value.trim().isEmpty) return false;
+    return DateTime.tryParse(value)?.isAfter(DateTime.now()) ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
-    final primaryModules = appModules.where((item) => item.primary).toList();
-    final functionalModules = appModules
-        .where((item) => !item.primary)
-        .toList();
+    final primaryModules = _configuredModules(primary: true);
+    final functionalModules = _configuredModules(primary: false);
     final footerUser = widget.session.username.trim().isNotEmpty
         ? widget.session.username.trim().toUpperCase()
         : widget.session.displayName.toUpperCase();
@@ -134,10 +126,12 @@ class _HomePageState extends State<HomePage> {
         '$footerUser - ID ${widget.session.appInformation.idCentroServicio}'
         ' - V ${AppStrings.appVersionName}'
         ' - M${widget.session.appInformation.idMensajero}';
+    final sessionInfoText =
+        '$footerText - ${widget.session.offline ? 'Offline' : 'Online'}';
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: AppColors.white,
+      backgroundColor: const Color(0xFFFEFEFE),
       drawer: AppNavigationDrawer(
         session: widget.session,
         environment: widget.environment,
@@ -156,44 +150,28 @@ class _HomePageState extends State<HomePage> {
               },
               offline: widget.session.offline,
             ),
+            HomeSessionInfo(userDetails: sessionInfoText),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.only(bottom: 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 15, 24, 0),
+                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
                       child: SearchGuideField(
                         controller: _guideController,
                         onSubmit: _launchTracking,
                       ),
                     ),
-                    if (kDebugMode) ...[
-                      const SizedBox(height: 10),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: OutlinedButton.icon(
-                          onPressed: _printingSewooTest
-                              ? null
-                              : _printSewooTest,
-                          icon: const Icon(Icons.print_outlined),
-                          label: Text(
-                            _printingSewooTest
-                                ? 'Probando SEWO...'
-                                : 'Prueba SEWO iOS',
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 26),
                     const SectionTitle(icon: Icons.check, text: 'Principales'),
                     PrimaryModulesLayout(
                       modules: primaryModules,
                       onSelected: _openModule,
                     ),
-                    const SizedBox(height: 5),
-                    const SectionTitle(icon: Icons.add, text: 'Funciones'),
+                    const SizedBox(height: 24),
+                    SectionTitle(icon: Icons.add, text: 'Funciones'),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 17),
                       child: GridView.builder(
@@ -203,7 +181,9 @@ class _HomePageState extends State<HomePage> {
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 3,
-                              mainAxisExtent: 85,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                              mainAxisExtent: 81,
                             ),
                         itemBuilder: (context, index) {
                           final module = functionalModules[index];
@@ -214,13 +194,12 @@ class _HomePageState extends State<HomePage> {
                         },
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 22),
                     HomeBanner(environment: widget.environment),
                   ],
                 ),
               ),
             ),
-            HomeFooter(userDetails: footerText),
           ],
         ),
       ),
@@ -301,7 +280,7 @@ class AppNavigationDrawer extends StatelessWidget {
                             Text(
                               environment.appName,
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
+                                color: Colors.white.withValues(alpha: 0.7),
                               ),
                             ),
                           ],
@@ -313,7 +292,7 @@ class AppNavigationDrawer extends StatelessWidget {
               ),
             ),
 
-            Divider(height: 1, color: Colors.white.withOpacity(0.12)),
+            Divider(height: 1, color: Colors.white.withValues(alpha: 0.12)),
 
             ListTile(
               title: const Text(
@@ -383,7 +362,7 @@ class AppNavigationDrawer extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.white.withOpacity(0.3)),
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),

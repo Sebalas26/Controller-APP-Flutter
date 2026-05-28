@@ -4,6 +4,10 @@ import '../../../../shared/config/app_environment.dart';
 import '../../../../shared/constants/app_assets.dart';
 import '../../../../shared/theme/app_colors.dart';
 
+const _bannerShadow = [
+  BoxShadow(color: Color(0x1A575757), offset: Offset(-2, 4), blurRadius: 12),
+];
+
 class HomeBanner extends StatelessWidget {
   const HomeBanner({super.key, required this.environment});
 
@@ -11,27 +15,26 @@ class HomeBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: SizedBox(
-        height: 145,
-        child: PageView(
-          controller: PageController(viewportFraction: 1),
-          children: [
-            BannerPanel(
-              title: 'Sigue tu envio',
-              subtitle: environment.label,
-              icon: Icons.search,
-              color: AppColors.blue8,
-            ),
-            const BannerPanel(
-              title: 'Pagos y recaudos',
-              subtitle: 'Nequi, Link de pago, Inter Pay',
-              icon: Icons.payments_outlined,
-              color: AppColors.accentLight,
-            ),
-          ],
-        ),
+    return SizedBox(
+      height: 118,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        scrollDirection: Axis.horizontal,
+        children: [
+          BannerPanel(
+            title: 'Sigue tu envío',
+            subtitle: environment.label,
+            icon: Icons.search,
+            color: AppColors.gray100,
+          ),
+          const SizedBox(width: 12),
+          const BannerPanel(
+            title: 'Pagos y recaudos',
+            subtitle: 'Nequi, link de pago, Inter Pay',
+            icon: Icons.payments_outlined,
+            color: Color(0xFFF0EDFB),
+          ),
+        ],
       ),
     );
   }
@@ -53,77 +56,65 @@ class BannerPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: Material(
-        elevation: 10,
-        shadowColor: AppColors.black.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(8),
-        clipBehavior: Clip.antiAlias,
-        child: DecoratedBox(
-          decoration: BoxDecoration(color: color),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Positioned.fill(
-                child: Image.asset(
-                  AppAssets.droneFlyingWithPackage,
-                  fit: BoxFit.contain,
-                  alignment: Alignment.centerRight,
-                ),
+    return Container(
+      width: 210,
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: _bannerShadow,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            right: -18,
+            bottom: -10,
+            child: Opacity(
+              opacity: 0.72,
+              child: Image.asset(
+                AppAssets.droneFlyingWithPackage,
+                width: 120,
+                height: 92,
+                fit: BoxFit.contain,
               ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      color,
-                      color.withValues(alpha: 0.9),
-                      color.withValues(alpha: 0.62),
-                    ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 15, 92, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 21, color: AppColors.black),
+                const SizedBox(height: 10),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.black,
+                    fontFamily: 'Montserrat',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(18),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.black,
-                              fontFamily: 'Montserrat',
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            subtitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.gray700,
-                              fontFamily: 'Montserrat',
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(icon, size: 34, color: AppColors.black),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.gray700,
+                    fontFamily: 'Montserrat',
+                    fontSize: 10,
+                    height: 1.2,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

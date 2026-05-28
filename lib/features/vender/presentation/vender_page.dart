@@ -173,7 +173,7 @@ class _VenderPageState extends State<VenderPage> {
     final showBack = _controller.currentStep > 0 && _controller.currentStep < 5;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: const Color(0xFFFEFEFE),
         boxShadow: [
           BoxShadow(
             color: AppColors.black.withValues(alpha: 0.16),
@@ -291,7 +291,7 @@ class _VenderNativeScaffoldState extends State<_VenderNativeScaffold> {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: AppColors.black,
+      color: const Color(0xFFFEFEFE),
       child: Column(
         children: [
           _VenderNativeToolbar(
@@ -301,7 +301,7 @@ class _VenderNativeScaffoldState extends State<_VenderNativeScaffold> {
           ),
           Expanded(
             child: ColoredBox(
-              color: AppColors.white,
+              color: const Color(0xFFFEFEFE),
               child: SingleChildScrollView(
                 controller: _scrollController,
                 keyboardDismissBehavior:
@@ -331,14 +331,17 @@ class _VenderNativeToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: AppColors.black,
       constraints: const BoxConstraints(minHeight: 56),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFEFEFE),
+        border: Border(bottom: BorderSide(color: Color(0xFFE0E0E0))),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
           IconButton(
             onPressed: onBack,
-            icon: const Icon(Icons.arrow_back, color: AppColors.white),
+            icon: const Icon(Icons.arrow_back, color: AppColors.black),
             tooltip: 'Atras',
           ),
           Expanded(
@@ -347,16 +350,16 @@ class _VenderNativeToolbar extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: AppColors.white,
+                color: AppColors.black,
                 fontFamily: 'Montserrat',
                 fontSize: 16,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
           IconButton(
             onPressed: onScrollDown,
-            icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.white),
+            icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.black),
             tooltip: 'Bajar',
           ),
         ],
@@ -385,11 +388,11 @@ class _NativeFooterButton extends StatelessWidget {
         foregroundColor: AppColors.white,
         disabledBackgroundColor: AppColors.gray200,
         disabledForegroundColor: AppColors.gray500,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
         textStyle: const TextStyle(
           fontFamily: 'Montserrat',
-          fontSize: 16,
+          fontSize: 14,
           fontWeight: FontWeight.w600,
         ),
       ),

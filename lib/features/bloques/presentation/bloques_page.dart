@@ -7,6 +7,7 @@ import '../../../shared/theme/app_colors.dart';
 import '../../login/login.dart';
 import '../models/bloques_models.dart';
 import 'controllers/bloques_flow_controller.dart';
+import 'views/bloques_courier_details_view.dart';
 import 'views/bloques_deliveries_view.dart';
 import 'views/bloques_qr_scanner_view.dart';
 import 'widgets/bloques_widgets.dart';
@@ -31,7 +32,6 @@ class _BloquesPageState extends State<BloquesPage> {
   late final BloquesFlowController _controller;
   bool _showManaged = false;
   bool _syncing = false;
-  bool _validationSuccessVisible = false;
   DateTime? _lastUpdate;
 
   @override
@@ -110,8 +110,6 @@ class _BloquesPageState extends State<BloquesPage> {
             bottom: 90 + MediaQuery.paddingOf(context).bottom,
             child: BloquesSyncFab(syncing: _syncing, onPressed: _syncBlocks),
           ),
-          if (_validationSuccessVisible)
-            const Positioned.fill(child: BloquesValidationOverlay()),
         ],
       ),
     );
@@ -224,7 +222,7 @@ class _BloquesPageState extends State<BloquesPage> {
             final valid = await _identifyCourier(document, code);
             if (valid && sheetContext.mounted) {
               Navigator.of(sheetContext).pop();
-              unawaited(_showValidationSuccess());
+              _openCourierDetails();
             }
             return valid;
           },
@@ -240,7 +238,7 @@ class _BloquesPageState extends State<BloquesPage> {
     if (!mounted || raw == null || raw.trim().isEmpty) return;
     try {
       final identity = await _controller.identityFromQr(raw);
-      await _identifyAndContinue(identity.document, identity.otp);
+      await _identifyAndOpenDetails(identity.document, identity.otp);
     } on Object catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -252,23 +250,15 @@ class _BloquesPageState extends State<BloquesPage> {
     }
   }
 
-  Future<bool> _identifyAndContinue(String document, String code) async {
+  Future<bool> _identifyAndOpenDetails(String document, String code) async {
     final valid = await _identifyCourier(document, code);
     if (!valid || !mounted) return false;
-    await _showValidationSuccess();
+    _openCourierDetails();
     return true;
   }
 
   Future<bool> _identifyCourier(String document, String code) async {
     return _runAction(() => _controller.identifyCourier(document, code));
-  }
-
-  Future<void> _showValidationSuccess() async {
-    setState(() => _validationSuccessVisible = true);
-    await Future<void>.delayed(const Duration(milliseconds: 2500));
-    if (!mounted) return;
-    setState(() => _validationSuccessVisible = false);
-    _openDeliveries();
   }
 
   Future<void> _openBlock(YaapPendingBlock block) async {
@@ -277,6 +267,17 @@ class _BloquesPageState extends State<BloquesPage> {
       _controller.openPendingBlock(block);
     });
     if (valid && mounted) _openDeliveries();
+  }
+
+  void _openCourierDetails() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => _BloquesCourierDetailsPage(
+          controller: _controller,
+          runAction: _runAction,
+        ),
+      ),
+    );
   }
 
   void _openDeliveries() {
@@ -288,6 +289,74 @@ class _BloquesPageState extends State<BloquesPage> {
         ),
       ),
     );
+  }
+}
+
+class _BloquesCourierDetailsPage extends StatelessWidget {
+  const _BloquesCourierDetailsPage({
+    required this.controller,
+    required this.runAction,
+  });
+
+  final BloquesFlowController controller;
+  final Future<bool> Function(Future<void> Function() action) runAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.white,
+      appBar: AppBar(title: const Text('Datos domiciliario')),
+      body: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          return Stack(
+            children: [
+              BloquesCourierDetailsView(
+                controller: controller,
+                onContinue: () => unawaited(_continueToDeliveries(context)),
+                onReject: () => unawaited(_showRejectSheet(context)),
+              ),
+              Positioned(
+                left: 16,
+                right: 16,
+                top: 8,
+                child: BloquesStatusBanner(controller: controller),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _continueToDeliveries(BuildContext context) async {
+    final prepared = await runAction(controller.prepareCourierForDeliveries);
+    if (!prepared || !context.mounted) return;
+    final loaded = await runAction(controller.loadDeliveryManagement);
+    if (!loaded || !context.mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => _BloquesDeliveriesPage(
+          controller: controller,
+          runAction: runAction,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRejectSheet(BuildContext context) async {
+    final rejected = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => BloquesRejectCourierSheet(
+        controller: controller,
+        runAction: runAction,
+      ),
+    );
+    if ((rejected ?? false) && context.mounted) {
+      Navigator.of(context).pop();
+    }
   }
 }
 

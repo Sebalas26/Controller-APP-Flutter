@@ -33,6 +33,14 @@ import UserNotifications
           result("SW50M3JyNHAxZDFzMW0wQ2w0UzMzbmNyMXBjMTBuUHQyMDIy")
         case "getAesSaltSecret":
           result("MW5UM3JyNHAxZDFTMU0wXzIwMjI=")
+        case "getYaapUser":
+          result(self?.bundleSecret("ControllerYaapUser") ?? "")
+        case "getYaapPasswordPruebas":
+          result(self?.bundleSecret("ControllerYaapPasswordPruebas") ?? "")
+        case "getYaapPasswordQa":
+          result(self?.bundleSecret("ControllerYaapPasswordQa") ?? "")
+        case "getYaapPasswordProduccion":
+          result(self?.bundleSecret("ControllerYaapPasswordProduccion") ?? "")
         case "takePackagePhoto":
           self?.takePackagePhoto(result: result)
         case "scanQrCode":
@@ -55,6 +63,14 @@ import UserNotifications
       }
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  private func bundleSecret(_ key: String) -> String {
+    guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
+      return ""
+    }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.hasPrefix("$(") ? "" : trimmed
   }
 
   private func takePackagePhoto(result: @escaping FlutterResult) {

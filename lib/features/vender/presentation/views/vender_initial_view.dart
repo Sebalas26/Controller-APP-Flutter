@@ -27,24 +27,7 @@ class VenderInitialView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SizedBox(height: 8),
-        VenderTextInput(
-          label: 'Numero de preguia / preenvio',
-          controller: controller.preGuide,
-          keyboardType: TextInputType.number,
-          center: true,
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-          child: VenderNativeButton(
-            label: 'Verificar preenvio',
-            fullWidth: true,
-            icon: const Icon(Icons.search),
-            onPressed: controller.busyRemote
-                ? null
-                : () => runAction(controller.verifyPreguide),
-          ),
-        ),
+        const SizedBox(height: 10),
         VenderCatalogDropdown(
           label: 'Ciudad de destino',
           options: catalogs.destinationCities,
@@ -74,7 +57,7 @@ class VenderInitialView extends StatelessWidget {
           center: true,
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 7),
           child: VenderNativeButton(
             label: 'Peso Kg Bascula (Opcional)',
             fullWidth: true,
@@ -101,7 +84,7 @@ class VenderInitialView extends StatelessWidget {
           center: true,
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
           child: VenderNativeButton(
             label: 'Calcular peso volumetrico',
             fullWidth: true,
@@ -140,7 +123,7 @@ class VenderInitialView extends StatelessWidget {
           value: controller.paymentAtHome,
           onChanged: controller.setPaymentAtHome,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
       ],
     );
   }

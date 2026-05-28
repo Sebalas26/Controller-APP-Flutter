@@ -143,6 +143,7 @@ class ControllerLoginRepository {
       loginDate: DateTime.now(),
       appInformation: appInformation,
       syncStatus: syncStatus,
+      modules: draft.credential.modules,
       offline: false,
     );
   }

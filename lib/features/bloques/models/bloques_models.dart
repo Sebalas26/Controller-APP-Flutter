@@ -283,6 +283,29 @@ class YaapRejectedGuide {
   }
 }
 
+class YaapRejectionReason {
+  const YaapRejectionReason({required this.id, required this.description});
+
+  static const guideTransportIssueId = 60;
+
+  final int id;
+  final String description;
+
+  bool get requiresGuideSelection => id == guideTransportIssueId;
+
+  factory YaapRejectionReason.fromJson(Map<String, dynamic> json) {
+    return YaapRejectionReason(
+      id: _readAnyInt(json, const ['idCausalRechazo', 'IdCausalRechazo', 'id']),
+      description: _readAnyString(json, const [
+        'descripcionCausalRechazo',
+        'DescripcionCausalRechazo',
+        'descripcion',
+        'Descripcion',
+      ]),
+    );
+  }
+}
+
 Map<String, dynamic>? yaapAsMap(Object? value) => _asMap(value);
 
 List<Map<String, dynamic>> yaapReadMapList(Object? value) =>

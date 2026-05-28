@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 import '../../../../shared/theme/app_colors.dart';
 import '../../models/vender_models.dart';
 
+const _venderSurface = Color(0xFFFEFEFE);
+const _venderBorder = Color(0xFFE0E0E0);
+const _venderMuted = Color(0xFF727272);
+const _venderSoftPurple = Color(0xFFF0EDFB);
+const _venderPurple = Color(0xFF6E52E1);
+
 class VenderPanel extends StatelessWidget {
   const VenderPanel({super.key, required this.child});
 
@@ -11,8 +17,8 @@ class VenderPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: AppColors.white,
-      child: Padding(padding: const EdgeInsets.all(24), child: child),
+      color: _venderSurface,
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
     );
   }
 }
@@ -32,12 +38,12 @@ class VenderSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+      padding: const EdgeInsets.fromLTRB(20, 12, 16, 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: AppColors.black, size: 22),
-          const SizedBox(width: 10),
+          Icon(icon, color: AppColors.black, size: 16),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -47,19 +53,19 @@ class VenderSectionTitle extends StatelessWidget {
                   style: const TextStyle(
                     color: AppColors.black,
                     fontFamily: 'Montserrat',
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 if (subtitle != null && subtitle!.trim().isNotEmpty) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 4),
                   Text(
                     subtitle!,
                     style: const TextStyle(
-                      color: AppColors.gray700,
+                      color: _venderMuted,
                       fontFamily: 'Montserrat',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w400,
                     ),
                   ),
                 ],
@@ -111,8 +117,8 @@ class VenderTextInput extends StatelessWidget {
         textAlign: center ? TextAlign.center : TextAlign.start,
         style: const TextStyle(
           color: AppColors.black,
-          fontFamily: 'Prospero',
-          fontSize: 16,
+          fontFamily: 'Montserrat',
+          fontSize: 14,
           fontWeight: FontWeight.w400,
         ),
         decoration: _underlineDecoration(),
@@ -141,18 +147,21 @@ class VenderReadOnlyValue extends StatelessWidget {
       label: label,
       requiredField: requiredField,
       child: Container(
-        constraints: const BoxConstraints(minHeight: 38),
+        constraints: const BoxConstraints(minHeight: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         alignment: center ? Alignment.center : Alignment.centerLeft,
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: AppColors.black)),
+        decoration: BoxDecoration(
+          color: _venderSurface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _venderBorder),
         ),
         child: Text(
           value.trim().isEmpty ? '0' : value,
           textAlign: center ? TextAlign.center : TextAlign.start,
           style: const TextStyle(
             color: AppColors.black,
-            fontFamily: 'Prospero',
-            fontSize: 16,
+            fontFamily: 'Montserrat',
+            fontSize: 14,
           ),
         ),
       ),
@@ -183,12 +192,15 @@ class VenderCatalogDropdown extends StatelessWidget {
       label: label,
       requiredField: requiredField,
       child: InkWell(
+        borderRadius: BorderRadius.circular(8),
         onTap: options.isEmpty ? null : () => _openSelector(context),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 42),
-          padding: const EdgeInsets.only(top: 7, bottom: 6),
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppColors.black)),
+          constraints: const BoxConstraints(minHeight: 40),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: _venderSurface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _venderBorder),
           ),
           child: Row(
             children: [
@@ -198,16 +210,16 @@ class VenderCatalogDropdown extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: options.isEmpty
-                        ? AppColors.gray500
+                    color: selectedValue == null || options.isEmpty
+                        ? _venderMuted
                         : AppColors.black,
-                    fontFamily: 'Prospero',
-                    fontSize: 16,
+                    fontFamily: 'Montserrat',
+                    fontSize: 14,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
               ),
-              const Icon(Icons.expand_more, color: AppColors.black),
+              const Icon(Icons.expand_more, color: AppColors.black, size: 21),
             ],
           ),
         ),
@@ -253,13 +265,13 @@ class VenderNativeButton extends StatelessWidget {
     final style = FilledButton.styleFrom(
       backgroundColor: AppColors.black,
       foregroundColor: AppColors.white,
-      disabledBackgroundColor: AppColors.gray200,
-      disabledForegroundColor: AppColors.gray500,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      disabledBackgroundColor: AppColors.gray100,
+      disabledForegroundColor: _venderMuted,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       textStyle: const TextStyle(
         fontFamily: 'Montserrat',
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: FontWeight.w600,
       ),
     );
@@ -296,7 +308,7 @@ class VenderYesNoSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -305,11 +317,11 @@ class VenderYesNoSelector extends StatelessWidget {
             style: const TextStyle(
               color: AppColors.black,
               fontFamily: 'Montserrat',
-              fontSize: 20,
-              fontWeight: FontWeight.w400,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Row(
             children: [
               _NativeRadio(
@@ -317,7 +329,7 @@ class VenderYesNoSelector extends StatelessWidget {
                 selected: value,
                 onTap: () => onChanged(true),
               ),
-              const SizedBox(width: 32),
+              const SizedBox(width: 8),
               _NativeRadio(
                 label: 'No',
                 selected: !value,
@@ -428,10 +440,10 @@ class VenderEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 28),
       child: Column(
         children: [
-          Icon(icon, size: 42, color: AppColors.gray700),
+          Icon(icon, size: 42, color: _venderMuted),
           const SizedBox(height: 10),
           Text(
             title,
@@ -447,7 +459,7 @@ class VenderEmptyState extends StatelessWidget {
           Text(
             message,
             style: const TextStyle(
-              color: AppColors.gray700,
+              color: _venderMuted,
               fontFamily: 'Montserrat',
             ),
             textAlign: TextAlign.center,
@@ -539,7 +551,7 @@ class _NativeFieldShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -552,9 +564,9 @@ class _NativeFieldShell extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.black,
-                    fontFamily: 'Prospero',
+                    fontFamily: 'Montserrat',
                     fontSize: 12,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -574,15 +586,16 @@ class _NativeFieldShell extends StatelessWidget {
                 const Text(
                   '*',
                   style: TextStyle(
-                    color: AppColors.black,
+                    color: AppColors.nativeBadgeRed,
                     fontFamily: 'Montserrat',
-                    fontSize: 24,
-                    height: 0.8,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ],
           ),
+          const SizedBox(height: 6),
           child,
         ],
       ),
@@ -605,24 +618,37 @@ class _NativeRadio extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            selected ? Icons.radio_button_checked : Icons.radio_button_off,
-            color: AppColors.black,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.black,
-              fontFamily: 'Montserrat',
-              fontSize: 16,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        constraints: const BoxConstraints(minWidth: 72, minHeight: 38),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: selected ? _venderSoftPurple : _venderSurface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: selected ? _venderPurple : _venderBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              color: selected ? _venderPurple : AppColors.black,
+              size: 18,
             ),
-          ),
-        ],
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? _venderPurple : AppColors.black,
+                fontFamily: 'Montserrat',
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -631,16 +657,21 @@ class _NativeRadio extends StatelessWidget {
 InputDecoration _underlineDecoration() {
   return const InputDecoration(
     isDense: true,
-    border: UnderlineInputBorder(
-      borderSide: BorderSide(color: AppColors.black),
+    filled: true,
+    fillColor: _venderSurface,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(8)),
+      borderSide: BorderSide(color: _venderBorder),
     ),
-    enabledBorder: UnderlineInputBorder(
-      borderSide: BorderSide(color: AppColors.black),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(8)),
+      borderSide: BorderSide(color: _venderBorder),
     ),
-    focusedBorder: UnderlineInputBorder(
-      borderSide: BorderSide(color: AppColors.black, width: 1.4),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(8)),
+      borderSide: BorderSide(color: AppColors.accent, width: 1.2),
     ),
-    contentPadding: EdgeInsets.only(top: 8, bottom: 3),
+    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 11),
   );
 }
 

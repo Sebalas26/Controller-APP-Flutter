@@ -24,6 +24,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>FirebaseMessagingAutoInitEnabled</key>
 	<true/>
+	<key>ControllerYaapUser</key>
+	<string>$(YAAP_USER)</string>
+	<key>ControllerYaapPasswordPruebas</key>
+	<string>$(YAAP_PASSWORD_PRUEBAS)</string>
+	<key>ControllerYaapPasswordQa</key>
+	<string>$(YAAP_PASSWORD_QA)</string>
+	<key>ControllerYaapPasswordProduccion</key>
+	<string>$(YAAP_PASSWORD)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

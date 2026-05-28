@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/theme/app_colors.dart';
 import '../controllers/bloques_flow_controller.dart';
 import '../widgets/bloques_widgets.dart';
 
@@ -23,6 +24,10 @@ class BloquesDeliveriesView extends StatelessWidget {
           BloquesCourierSummary(courier: controller.courier!),
           const SizedBox(height: 12),
         ],
+        if (controller.routeState != null) ...[
+          _RouteStatePanel(controller: controller),
+          const SizedBox(height: 12),
+        ],
         Row(
           children: [
             Expanded(
@@ -39,9 +44,9 @@ class BloquesDeliveriesView extends StatelessWidget {
               child: FilledButton.icon(
                 onPressed: controller.busyRemote || deliveries.isEmpty
                     ? null
-                    : () => runAction(controller.assignCurrentSheet),
-                icon: const Icon(Icons.assignment_turned_in_outlined),
-                label: const Text('Asignar'),
+                    : () => runAction(controller.closeCurrentDelivery),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Cerrar entrega'),
               ),
             ),
           ],
@@ -66,6 +71,45 @@ class BloquesDeliveriesView extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _RouteStatePanel extends StatelessWidget {
+  const _RouteStatePanel({required this.controller});
+
+  final BloquesFlowController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = controller.routeState;
+    if (state == null) return const SizedBox.shrink();
+    final rejected = state.status.toLowerCase().contains('rechaz');
+    return BloquesPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Estado ruta: ${state.status.isEmpty ? 'Sin estado' : state.status}',
+            style: TextStyle(
+              color: rejected ? AppColors.red : AppColors.black,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (state.rejectedGuides.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...state.rejectedGuides.map(
+              (guide) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '${guide.guideNumber} - ${guide.reason}',
+                  style: const TextStyle(color: AppColors.gray700),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

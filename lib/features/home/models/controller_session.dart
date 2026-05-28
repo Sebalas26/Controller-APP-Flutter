@@ -9,6 +9,7 @@ class ControllerSession {
     required this.loginDate,
     required this.appInformation,
     required this.syncStatus,
+    required this.modules,
     required this.offline,
   });
 
@@ -18,6 +19,7 @@ class ControllerSession {
   final DateTime loginDate;
   final AppInformation appInformation;
   final LocalSyncStatus? syncStatus;
+  final List<ModuleApp> modules;
   final bool offline;
 
   factory ControllerSession.fromAuthenticated(
@@ -31,6 +33,7 @@ class ControllerSession {
       loginDate: session.loginDate,
       appInformation: session.appInformation,
       syncStatus: session.syncStatus,
+      modules: session.modules,
       offline: session.offline,
     );
   }

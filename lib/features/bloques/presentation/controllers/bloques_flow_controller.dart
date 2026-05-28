@@ -27,9 +27,11 @@ class BloquesFlowController extends ChangeNotifier {
   String statusMessage = '';
   String? errorMessage;
   YaapCourier? courier;
+  String? motherGuideNumber;
   YaapRouteState? routeState;
   List<YaapDelivery> deliveries = const [];
   List<YaapPendingBlock> pendingBlocks = const [];
+  List<YaapRejectionReason> rejectionReasons = const [];
 
   Future<void> initialize() async {
     loading = true;
@@ -41,6 +43,7 @@ class BloquesFlowController extends ChangeNotifier {
       courier = await localRepository.loadCourier();
       deliveries = await localRepository.loadDeliveries();
       pendingBlocks = await localRepository.loadPendingBlocks();
+      motherGuideNumber = null;
       if (!offline) {
         await refreshPendingBlocks(silent: true);
       }
@@ -74,18 +77,149 @@ class BloquesFlowController extends ChangeNotifier {
           otp: cleanOtp,
         );
         await localRepository.saveCourier(courier!);
-        await refreshDeliveries(silent: true);
-        final routeId = courier?.routeId ?? '';
-        if (routeId.isNotEmpty) {
-          routeState = await remoteRepository.validateRouteState(
-            config: apiConfig,
-            appInformation: appInformation,
-            routeId: routeId,
-          );
-        }
+        deliveries = const [];
+        await localRepository.saveDeliveries(deliveries);
+        motherGuideNumber = null;
+        routeState = null;
         statusMessage = 'Mensajero validado.';
       },
     );
+  }
+
+  Future<void> prepareCourierForDeliveries() async {
+    final current = courier;
+    if (current == null) {
+      throw const YaapException('Primero valida un mensajero.');
+    }
+    _ensureOnline();
+    await _runRemote(
+      startMessage: 'Actualizando ruta.',
+      action: () async {
+        final routeUpdated = await remoteRepository.updateRoute(
+          config: apiConfig,
+          appInformation: appInformation,
+          courier: current,
+        );
+        if (!routeUpdated) {
+          throw const YaapException('No fue posible actualizar la ruta.');
+        }
+        final notified = await remoteRepository.notifyCourierAvailability(
+          config: apiConfig,
+          appInformation: appInformation,
+          courier: current,
+          enabled: true,
+        );
+        if (!notified) {
+          throw const YaapException('No fue posible habilitar el mensajero.');
+        }
+        statusMessage = 'Mensajero habilitado.';
+      },
+    );
+  }
+
+  Future<void> loadDeliveryManagement() async {
+    final current = courier;
+    if (current == null) {
+      throw const YaapException('Primero valida un mensajero.');
+    }
+    _ensureOnline();
+    await _runRemote(
+      startMessage: 'Consultando entregas.',
+      action: () async {
+        await _refreshDeliveriesRemote(current);
+        await _validateAndAssignCurrentBlockRemote(current);
+        final routeId = current.routeId;
+        routeState = routeId.isEmpty
+            ? null
+            : await remoteRepository.validateRouteState(
+                config: apiConfig,
+                appInformation: appInformation,
+                routeId: routeId,
+              );
+        if (_isApprovedRoute(routeState)) {
+          await _completeApprovedRoute(current);
+          statusMessage = 'Entrega cerrada correctamente.';
+        } else if (_isRejectedRoute(routeState)) {
+          statusMessage = 'Ruta rechazada. Revisa las guias reportadas.';
+        } else if (_isPendingRoute(routeState)) {
+          statusMessage = 'Ruta pendiente por aprobacion.';
+        } else {
+          statusMessage = 'Entregas listas para gestionar.';
+        }
+      },
+    );
+  }
+
+  Future<void> validateAndAssignCurrentBlock() async {
+    final current = courier;
+    if (current == null) {
+      throw const YaapException('Primero valida un mensajero.');
+    }
+    final firstGuide = current.guideNumbers
+        .map((guide) => guide.replaceAll(RegExp(r'[^0-9]'), '').trim())
+        .firstWhere((guide) => guide.isNotEmpty, orElse: () => '');
+    if (firstGuide.isEmpty) {
+      throw const YaapException('El mensajero no tiene guias para validar.');
+    }
+    _ensureOnline();
+    await _runRemote(
+      startMessage: 'Asignando gestion de bloque.',
+      action: () async {
+        await _validateAndAssignCurrentBlockRemote(current);
+        statusMessage = 'Gestion del bloque asignada.';
+      },
+    );
+  }
+
+  Future<void> _validateAndAssignCurrentBlockRemote(YaapCourier current) async {
+    final firstGuide = current.guideNumbers
+        .map((guide) => guide.replaceAll(RegExp(r'[^0-9]'), '').trim())
+        .firstWhere((guide) => guide.isNotEmpty, orElse: () => '');
+    if (firstGuide.isEmpty) {
+      throw const YaapException('El mensajero no tiene guias para validar.');
+    }
+    final guideMother = await remoteRepository.validateMotherGuide(
+      config: apiConfig,
+      appInformation: appInformation,
+      guideNumber: firstGuide,
+    );
+    final cleanMotherGuide = guideMother
+        .replaceAll(RegExp(r'[^0-9]'), '')
+        .trim();
+    if (cleanMotherGuide.isEmpty) {
+      throw const YaapException(
+        'No pudimos encontrar el numero del bloque. Intentalo de nuevo.',
+      );
+    }
+    motherGuideNumber = cleanMotherGuide;
+
+    final assigned = await remoteRepository.assignBlock(
+      config: apiConfig,
+      appInformation: appInformation,
+      block: YaapPendingBlock(
+        raw: {
+          ...current.raw,
+          'numeroGuiaMadre': cleanMotherGuide,
+          'numeroGuiaAsignacion': firstGuide,
+          'guiasBloque': current.guideNumbers,
+        },
+        id: 0,
+        motherGuideNumber: firstGuide,
+        courierDocument: current.document,
+        courierName: current.name,
+        assignedUser: _currentUserName,
+        photoUrl: current.photoUrl,
+        status: 'pendiente',
+        guideNumbers: current.guideNumbers,
+        createdAt: DateTime.now(),
+        endsAt: null,
+      ),
+    );
+    if (!assigned) {
+      throw const YaapException(
+        'No fue posible asignar la gestion del bloque.',
+      );
+    }
   }
 
   Future<void> refreshDeliveries({bool silent = false}) async {
@@ -98,13 +232,91 @@ class BloquesFlowController extends ChangeNotifier {
       silent: silent,
       startMessage: 'Consultando entregas.',
       action: () async {
-        deliveries = await remoteRepository.fetchDeliveries(
+        await _refreshDeliveriesRemote(current);
+        statusMessage = 'Entregas actualizadas: ${deliveries.length}.';
+      },
+    );
+  }
+
+  Future<void> loadRejectionReasons() async {
+    if (rejectionReasons.isNotEmpty) return;
+    _ensureOnline();
+    await _runRemote(
+      startMessage: 'Consultando causales de rechazo.',
+      action: () async {
+        rejectionReasons = await remoteRepository.fetchRejectionReasons(
           config: apiConfig,
           appInformation: appInformation,
-          guideNumbers: current.guideNumbers,
         );
-        await localRepository.saveDeliveries(deliveries);
-        statusMessage = 'Entregas actualizadas: ${deliveries.length}.';
+        if (rejectionReasons.isEmpty) {
+          throw const YaapException('No se encontraron causales de rechazo.');
+        }
+        statusMessage = 'Causales de rechazo cargadas.';
+      },
+    );
+  }
+
+  Future<void> rejectCourier({
+    required YaapRejectionReason reason,
+    required List<String> guideNumbers,
+  }) async {
+    final current = courier;
+    if (current == null) {
+      throw const YaapException('Primero valida un mensajero.');
+    }
+    _ensureOnline();
+    await _runRemote(
+      startMessage: 'Rechazando mensajero.',
+      action: () async {
+        if (reason.requiresGuideSelection) {
+          final selected = guideNumbers
+              .map((guide) => guide.replaceAll(RegExp(r'[^0-9]'), '').trim())
+              .where((guide) => guide.isNotEmpty)
+              .toSet();
+          if (selected.isEmpty) {
+            throw const YaapException(
+              'Selecciona al menos una guia para rechazar.',
+            );
+          }
+          if (deliveries.isEmpty) {
+            await _refreshDeliveriesRemote(current);
+          }
+          final selectedDeliveries = deliveries
+              .where(
+                (delivery) => selected.contains(
+                  delivery.guideNumber.replaceAll(RegExp(r'[^0-9]'), '').trim(),
+                ),
+              )
+              .toList(growable: false);
+          if (selectedDeliveries.isEmpty) {
+            throw const YaapException(
+              'No fue posible encontrar las guias seleccionadas.',
+            );
+          }
+          final rejected = await remoteRepository.markRejectionGuides(
+            config: apiConfig,
+            appInformation: appInformation,
+            reasonId: reason.id,
+            deliveries: selectedDeliveries,
+          );
+          if (!rejected) {
+            throw const YaapException(
+              'No fue posible rechazar las guias seleccionadas.',
+            );
+          }
+        } else {
+          final notified = await remoteRepository.notifyCourierAvailability(
+            config: apiConfig,
+            appInformation: appInformation,
+            courier: current,
+            enabled: false,
+          );
+          if (!notified) {
+            throw const YaapException('No fue posible rechazar el mensajero.');
+          }
+        }
+        await _clearCurrentCourier();
+        statusMessage = 'Mensajero rechazado.';
       },
     );
   }
@@ -130,6 +342,28 @@ class BloquesFlowController extends ChangeNotifier {
           throw const YaapException('No fue posible asignar la planilla.');
         }
         statusMessage = 'Planilla asignada.';
+      },
+    );
+  }
+
+  Future<void> closeCurrentDelivery() async {
+    final guideMother = motherGuideNumber?.trim() ?? '';
+    if (guideMother.isEmpty) {
+      throw const YaapException('No se encontro la guia madre del bloque.');
+    }
+    _ensureOnline();
+    await _runRemote(
+      startMessage: 'Validando cierre de entrega.',
+      action: () async {
+        final verified = await remoteRepository.verifyBlockGuides(
+          config: apiConfig,
+          appInformation: appInformation,
+          motherGuideNumber: guideMother,
+        );
+        if (!verified) {
+          throw const YaapException('Faltan envios por verificar.');
+        }
+        statusMessage = 'Entrega verificada correctamente.';
       },
     );
   }
@@ -203,6 +437,7 @@ class BloquesFlowController extends ChangeNotifier {
       guideNumbers: guides,
       otp: '',
     );
+    motherGuideNumber = block.motherGuideNumber;
     deliveries = guides
         .map(
           (guide) => YaapDelivery(
@@ -235,10 +470,80 @@ class BloquesFlowController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _refreshDeliveriesRemote(YaapCourier current) async {
+    deliveries = await remoteRepository.fetchDeliveries(
+      config: apiConfig,
+      appInformation: appInformation,
+      guideNumbers: current.guideNumbers,
+    );
+    await localRepository.saveDeliveries(deliveries);
+  }
+
+  Future<void> _completeApprovedRoute(YaapCourier current) async {
+    final guideMother = motherGuideNumber?.trim() ?? '';
+    if (guideMother.isEmpty) {
+      throw const YaapException('No se encontro la guia madre del bloque.');
+    }
+    final assigned = await remoteRepository.assignSheet(
+      config: apiConfig,
+      appInformation: appInformation,
+      courier: current,
+    );
+    if (!assigned) {
+      throw const YaapException('No fue posible asignar la planilla.');
+    }
+    final delivered = await remoteRepository.deliverBlock(
+      config: apiConfig,
+      appInformation: appInformation,
+      motherGuideNumber: guideMother,
+    );
+    if (!delivered) {
+      throw const YaapException('No fue posible entregar el bloque.');
+    }
+    final closed = await remoteRepository.closeMotherGuide(
+      config: apiConfig,
+      appInformation: appInformation,
+      motherGuideNumber: guideMother,
+    );
+    if (!closed) {
+      throw const YaapException('No fue posible cerrar la guia madre.');
+    }
+  }
+
+  Future<void> _clearCurrentCourier() async {
+    courier = null;
+    motherGuideNumber = null;
+    routeState = null;
+    deliveries = const [];
+    await localRepository.clearCourierAndDeliveries();
+  }
+
+  bool _isApprovedRoute(YaapRouteState? state) {
+    return state?.status.toLowerCase().contains('aprob') ?? false;
+  }
+
+  bool _isRejectedRoute(YaapRouteState? state) {
+    return state?.status.toLowerCase().contains('rechaz') ?? false;
+  }
+
+  bool _isPendingRoute(YaapRouteState? state) {
+    return state?.status.toLowerCase().contains('pend') ?? false;
+  }
+
   void _ensureOnline() {
     if (offline) {
       throw const YaapException('Este flujo requiere conexion.');
     }
+  }
+
+  String get _currentUserName {
+    if (appInformation.nombreUsuario.trim().isNotEmpty) {
+      return appInformation.nombreUsuario.trim();
+    }
+    if (appInformation.idUsuario.trim().isNotEmpty) {
+      return appInformation.idUsuario.trim();
+    }
+    return appInformation.identificacionUsuario.trim();
   }
 
   Future<void> _runRemote({

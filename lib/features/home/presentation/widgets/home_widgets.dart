@@ -3,20 +3,33 @@ import 'package:flutter/material.dart';
 import '../../../../shared/theme/app_colors.dart';
 import '../../models/home_module.dart';
 
+const _surface = Color(0xFFFEFEFE);
+const _cardShadow = [
+  BoxShadow(color: Color(0x26575757), offset: Offset(-2, 4), blurRadius: 12),
+];
+
 class SectionTitle extends StatelessWidget {
-  const SectionTitle({super.key, required this.icon, required this.text});
+  const SectionTitle({
+    super.key,
+    required this.icon,
+    required this.text,
+    this.actionLabel,
+    this.onActionPressed,
+  });
 
   final IconData icon;
   final String text;
+  final String? actionLabel;
+  final VoidCallback? onActionPressed;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+      padding: const EdgeInsets.fromLTRB(20, 0, 16, 10),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.black, size: 12),
-          const SizedBox(width: 5),
+          Icon(icon, color: AppColors.black, size: 13),
+          const SizedBox(width: 6),
           Text(
             text,
             style: const TextStyle(
@@ -26,6 +39,23 @@ class SectionTitle extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
+          const Spacer(),
+          if (actionLabel != null)
+            TextButton(
+              onPressed: onActionPressed,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.accent,
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                textStyle: const TextStyle(
+                  fontFamily: 'Montserrat',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              child: Text(actionLabel!),
+            ),
         ],
       ),
     );
@@ -44,104 +74,89 @@ class PrimaryModulesLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final admit = _moduleById('vender', 0);
-    final deliver = _moduleById('entregar', 1);
-    final pickup = _moduleById('recoger', 2);
+    if (modules.isEmpty) return const SizedBox.shrink();
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 17),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(5, 0, 5, 10),
-        child: SizedBox(
-          height: 157,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: _PrimaryModuleCard(
-                  module: admit,
-                  large: true,
-                  onTap: () => onSelected(admit),
-                ),
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 68,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        height: 100,
+        child: modules.length <= 3
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var index = 0; index < modules.length; index++) ...[
+                    if (index > 0) const SizedBox(width: 8),
+                    Expanded(
                       child: _PrimaryModuleCard(
-                        module: deliver,
-                        onTap: () => onSelected(deliver),
-                      ),
-                    ),
-                    const Spacer(),
-                    SizedBox(
-                      height: 68,
-                      child: _PrimaryModuleCard(
-                        module: pickup,
-                        onTap: () => onSelected(pickup),
+                        module: modules[index],
+                        onTap: modules[index].enabled
+                            ? () => onSelected(modules[index])
+                            : null,
                       ),
                     ),
                   ],
-                ),
+                ],
+              )
+            : ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: modules.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final module = modules[index];
+                  return SizedBox(
+                    width: 105,
+                    child: _PrimaryModuleCard(
+                      module: module,
+                      onTap: module.enabled ? () => onSelected(module) : null,
+                    ),
+                  );
+                },
               ),
-            ],
-          ),
-        ),
       ),
     );
-  }
-
-  AppModule _moduleById(String id, int fallbackIndex) {
-    for (final module in modules) {
-      if (module.id == id) return module;
-    }
-    final index = fallbackIndex.clamp(0, modules.length - 1);
-    return modules[index];
   }
 }
 
 class _PrimaryModuleCard extends StatelessWidget {
-  const _PrimaryModuleCard({
-    required this.module,
-    required this.onTap,
-    this.large = false,
-  });
+  const _PrimaryModuleCard({required this.module, required this.onTap});
 
   final AppModule module;
-  final VoidCallback onTap;
-  final bool large;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.gray200,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+    return Opacity(
+      opacity: module.enabled ? 1 : 0.3,
+      child: _HomeCardShell(
+        borderColor: AppColors.accent,
         onTap: onTap,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(module.icon, size: large ? 42 : 24, color: AppColors.black),
-              SizedBox(height: large ? 10 : 4),
-              Text(
-                module.homeLabel,
-                textAlign: TextAlign.center,
-                maxLines: large ? 2 : 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.black,
-                  fontFamily: 'Montserrat',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                  height: 1.1,
-                ),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 13, 8, 10),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(module.icon, size: 28, color: AppColors.black),
+                  const SizedBox(height: 9),
+                  Text(
+                    module.homeLabel,
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.black,
+                      fontFamily: 'Montserrat',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      height: 1.08,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            if (module.showNew) const _NewBadge(),
+          ],
         ),
       ),
     );
@@ -156,74 +171,103 @@ class ModuleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(6),
-      child: Opacity(
-        opacity: module.enabled ? 1 : 0.3,
-        child: Material(
-          color: AppColors.gray200,
-          borderRadius: BorderRadius.circular(6),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: module.enabled ? onTap : null,
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(7, 10, 7, 15),
-                  child: Column(
-                    children: [
-                      Icon(module.icon, size: 20, color: AppColors.black),
-                      const SizedBox(height: 4),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            module.homeLabel,
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.black,
-                              fontFamily: 'Montserrat',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                              height: 1.1,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (module.showNew)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
-                        vertical: 1,
-                      ),
-                      decoration: const BoxDecoration(
-                        color: AppColors.black,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(6),
-                          bottomRight: Radius.circular(6),
-                        ),
-                      ),
-                      child: const Text(
-                        'Nuevo',
+    return Opacity(
+      opacity: module.enabled ? 1 : 0.3,
+      child: _HomeCardShell(
+        onTap: module.enabled ? onTap : null,
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(7, 11, 7, 9),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(module.icon, size: 24, color: AppColors.black),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        module.homeLabel,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: AppColors.white,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.black,
                           fontFamily: 'Montserrat',
-                          fontSize: 8,
+                          fontSize: 12,
                           fontWeight: FontWeight.w400,
+                          height: 1.08,
                         ),
                       ),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
+            if (module.showNew) const _NewBadge(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeCardShell extends StatelessWidget {
+  const _HomeCardShell({required this.child, this.onTap, this.borderColor});
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final Color? borderColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(16);
+    return Container(
+      decoration: BoxDecoration(borderRadius: radius, boxShadow: _cardShadow),
+      child: Material(
+        color: _surface,
+        borderRadius: radius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              border: Border.all(color: borderColor ?? _surface),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NewBadge extends StatelessWidget {
+  const _NewBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      right: 0,
+      top: 0,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: const BoxDecoration(
+          color: AppColors.black,
+          borderRadius: BorderRadius.only(
+            bottomLeft: Radius.circular(8),
+            topRight: Radius.circular(16),
+          ),
+        ),
+        child: const Text(
+          'Nuevo',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: AppColors.white,
+            fontFamily: 'Montserrat',
+            fontSize: 8,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ),

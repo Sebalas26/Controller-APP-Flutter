@@ -40,6 +40,7 @@ class ControllerLocalDatabase {
     if (credentialRows.isEmpty) return null;
 
     final syncStatus = await currentSyncStatus();
+    final modules = await _loadModules(db);
     final loginDate =
         _parseCompactDate(appInfo.loginDateCompact) ??
         _parseHumanDate(appInfo.loginDate) ??
@@ -52,6 +53,7 @@ class ControllerLocalDatabase {
       loginDate: loginDate,
       appInformation: appInfo,
       syncStatus: syncStatus,
+      modules: modules,
       offline: false,
     );
   }
@@ -109,6 +111,7 @@ class ControllerLocalDatabase {
       loginDate: lastLogin,
       appInformation: appInfo,
       syncStatus: await currentSyncStatus(),
+      modules: await _loadModules(db),
       offline: true,
     );
   }
@@ -247,6 +250,24 @@ class ControllerLocalDatabase {
     final rows = await db.query('firebase_tokens', limit: 1);
     if (rows.isEmpty) return '';
     return _dbString(rows.first['token']);
+  }
+
+  Future<List<ModuleApp>> _loadModules(Database db) async {
+    final rows = await db.query('modules_app', orderBy: 'sort_order ASC');
+    return rows
+        .map(
+          (row) => ModuleApp(
+            id: _dbInt(row['mod_id']),
+            name: _dbString(row['name']),
+            enabled: _dbBool(row['enabled']),
+            visible: _dbBool(row['visible']),
+            order: _dbInt(row['sort_order']),
+            applicationId: _dbInt(row['application_id']),
+            newDate: _dbString(row['new_date']),
+            primary: _dbBool(row['primary_module']),
+          ),
+        )
+        .toList();
   }
 
   Future<void> saveSchemasAndCreateTables(List<SyncSchema> schemas) async {

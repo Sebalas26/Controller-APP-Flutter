@@ -631,6 +631,7 @@ class AuthenticatedSession {
     required this.loginDate,
     required this.appInformation,
     required this.syncStatus,
+    required this.modules,
     required this.offline,
   });
 
@@ -640,6 +641,7 @@ class AuthenticatedSession {
   final DateTime loginDate;
   final AppInformation appInformation;
   final LocalSyncStatus? syncStatus;
+  final List<ModuleApp> modules;
   final bool offline;
 }
 
@@ -755,6 +757,19 @@ String _lowerFirst(String key) {
 }
 
 String _dbString(Object? value) => value?.toString() ?? '';
+
+int _dbInt(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+bool _dbBool(Object? value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  final text = value?.toString().toLowerCase() ?? '';
+  return text == 'true' || text == '1';
+}
 
 Map<String, dynamic> _decodeObject(String text) {
   if (text.trim().isEmpty) return {};
