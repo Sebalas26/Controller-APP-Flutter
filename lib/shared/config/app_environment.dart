@@ -45,8 +45,10 @@ class EnvironmentConfig {
   String get mediosPagoLegacy => urls[13];
   String get loginIntegracion => urls[14];
   String get auditoriaPesos => urls[15];
+  String get auditoriaPesosAuth => urls[16];
   String get prepago => urls[17];
   String get listaRestrictiva => urls[18];
+  String get mensajeTexto => urls[19];
   String get admisionOffline => urls[21];
   String get serviciosAgiles => urls[22];
   String get yaap => urls[23];
@@ -112,6 +114,9 @@ class EnvironmentConfig {
       deliveryProofTokenBaseUrl: pruebaEntregaToken,
       armadoBloquesBaseUrl: armadoBloques,
       entregaBloqueBaseUrl: entregaBloque,
+      auditoriaPesosBaseUrl: auditoriaPesos,
+      auditoriaAuthBaseUrl: auditoriaPesosAuth,
+      mensajeTextoBaseUrl: mensajeTexto,
     );
   }
 

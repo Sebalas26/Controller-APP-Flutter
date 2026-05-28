@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../reimpresion/reimpresion.dart';
+import '../../anular_guia/anular_guia.dart';
+import '../../auditoria_pesos/auditoria_pesos.dart';
 import '../../bloques/bloques.dart';
 import '../../entregas/entregas.dart';
 import '../../recoger/recoger.dart';
@@ -81,6 +83,30 @@ class ModulePage extends StatelessWidget {
       );
     }
 
+    if (module.id == 'auditoria') {
+      return Scaffold(
+        body: SafeArea(
+          child: AuditoriaPesosPage(
+            appInformation: session.appInformation,
+            apiConfig: config.toApiConfig(),
+            offline: session.offline,
+          ),
+        ),
+      );
+    }
+
+    if (module.id == 'anular') {
+      return Scaffold(
+        body: SafeArea(
+          child: AnularGuiaPage(
+            appInformation: session.appInformation,
+            apiConfig: config.toApiConfig(),
+            offline: session.offline,
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: Text(module.title)),
       body: SingleChildScrollView(
@@ -128,7 +154,11 @@ class ModulePage extends StatelessWidget {
           offline: session.offline,
         );
       case 'anular':
-        return const CancelGuideBody();
+        return AnularGuiaPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        );
       case 'bloques':
         return BloquesPage(
           appInformation: session.appInformation,
@@ -138,7 +168,11 @@ class ModulePage extends StatelessWidget {
       case 'enrutamiento':
         return const RoutingBody();
       case 'auditoria':
-        return const AuditBody();
+        return AuditoriaPesosPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        );
       case 'prepago':
         return const PrepagoBody();
       default:

@@ -16,6 +16,9 @@ class ControllerApiConfig {
     required this.deliveryProofTokenBaseUrl,
     required this.armadoBloquesBaseUrl,
     required this.entregaBloqueBaseUrl,
+    required this.auditoriaPesosBaseUrl,
+    required this.auditoriaAuthBaseUrl,
+    required this.mensajeTextoBaseUrl,
   });
 
   final String label;
@@ -34,4 +37,7 @@ class ControllerApiConfig {
   final String deliveryProofTokenBaseUrl;
   final String armadoBloquesBaseUrl;
   final String entregaBloqueBaseUrl;
+  final String auditoriaPesosBaseUrl;
+  final String auditoriaAuthBaseUrl;
+  final String mensajeTextoBaseUrl;
 }
