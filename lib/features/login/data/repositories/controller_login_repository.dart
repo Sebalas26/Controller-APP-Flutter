@@ -83,6 +83,11 @@ class ControllerLoginRepository {
     required bool rememberUser,
     LoginProgress? onProgress,
   }) async {
+    await localDatabase.ensureSameUserForToday(
+      username: draft.username,
+      environmentLabel: draft.config.label,
+    );
+
     onProgress?.call('Guardando credenciales locales...');
     var appInformation = await localDatabase.saveLoginBootstrap(
       credential: draft.credential,
@@ -126,15 +131,37 @@ class ControllerLoginRepository {
       deviceId: deviceId.isEmpty ? null : deviceId,
     );
 
-    final syncStatus =
-        await PostLoginSyncService(
-          apiClient: apiClient,
-          localDatabase: localDatabase,
-        ).synchronize(
-          config: draft.config,
-          appInformation: appInformation,
-          onProgress: onProgress,
+    final LocalSyncStatus? syncStatus;
+    final alreadySynchronized = await localDatabase.hasCompletedDailyLoginSync(
+      username: draft.username,
+      environmentLabel: draft.config.label,
+    );
+    if (alreadySynchronized) {
+      onProgress?.call('Sincronizacion diaria ya realizada.');
+      syncStatus =
+          await localDatabase.dailyLoginSyncStatus(
+            username: draft.username,
+            environmentLabel: draft.config.label,
+          ) ??
+          await localDatabase.currentSyncStatus();
+    } else {
+      syncStatus =
+          await PostLoginSyncService(
+            apiClient: apiClient,
+            localDatabase: localDatabase,
+          ).synchronize(
+            config: draft.config,
+            appInformation: appInformation,
+            onProgress: onProgress,
+          );
+      if (syncStatus.completed) {
+        await localDatabase.saveDailyLoginSyncStatus(
+          username: draft.username,
+          environmentLabel: draft.config.label,
+          status: syncStatus,
         );
+      }
+    }
 
     return AuthenticatedSession(
       username: draft.username,

@@ -68,7 +68,7 @@ class ControllerLocalDatabase {
     final db = await database;
     final credentialRows = await db.query(
       'credentials',
-      where: 'username = ? AND active = 1',
+      where: 'username = ?',
       whereArgs: [username],
       limit: 1,
     );
@@ -98,9 +98,19 @@ class ControllerLocalDatabase {
     }
 
     final limit = await offlineHoursLimit();
-    final lastLogin = _parseHumanDate(appInfo.loginDate);
-    if (lastLogin == null ||
-        DateTime.now().difference(lastLogin).inHours > limit) {
+    final lastLogin =
+        _parseCompactDate(appInfo.loginDateCompact) ??
+        _parseHumanDate(appInfo.loginDate);
+    if (lastLogin == null || !_isSameDay(lastLogin, DateTime.now())) {
+      throw const LoginException(
+        'El acceso offline solo esta permitido para usuarios logueados hoy.',
+      );
+    }
+    await ensureSameUserForToday(
+      username: username,
+      environmentLabel: environmentLabel,
+    );
+    if (DateTime.now().difference(lastLogin).inHours > limit) {
       throw const LoginException('El tiempo de acceso offline fue superado.');
     }
 
@@ -114,6 +124,29 @@ class ControllerLocalDatabase {
       modules: await _loadModules(db),
       offline: true,
     );
+  }
+
+  Future<void> ensureSameUserForToday({
+    required String username,
+    required String environmentLabel,
+  }) async {
+    final db = await database;
+    final appRows = await db.query('app_information', limit: 1);
+    if (appRows.isEmpty) return;
+    final appInfo = AppInformation.fromDb(appRows.first);
+    if (appInfo.environmentLabel != environmentLabel) return;
+    final lastLogin =
+        _parseCompactDate(appInfo.loginDateCompact) ??
+        _parseHumanDate(appInfo.loginDate);
+    if (lastLogin == null || !_isSameDay(lastLogin, DateTime.now())) return;
+
+    final currentUsername = await _lastSessionUsername(db);
+    if (currentUsername.trim().isEmpty) return;
+    if (currentUsername.trim().toLowerCase() != username.trim().toLowerCase()) {
+      throw LoginException(
+        'Hoy ya inicio sesion el usuario $currentUsername. No se permite ingresar con un usuario distinto el mismo dia.',
+      );
+    }
   }
 
   Future<AppInformation> saveLoginBootstrap({
@@ -548,6 +581,65 @@ class ControllerLocalDatabase {
     return LocalSyncStatus.fromDb(rows.first);
   }
 
+  Future<LocalSyncStatus?> dailyLoginSyncStatus({
+    required String username,
+    required String environmentLabel,
+    DateTime? date,
+  }) async {
+    final db = await database;
+    final dayKey = _dailyKey(date ?? DateTime.now());
+    final rows = await db.query(
+      'daily_login_sync',
+      where: 'username = ? AND environment_label = ? AND day_key = ?',
+      whereArgs: [username, environmentLabel, dayKey],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return LocalSyncStatus(
+      completed: _dbBool(rows.first['completed']),
+      message: _dbString(rows.first['message']),
+      startedAt:
+          DateTime.tryParse(_dbString(rows.first['started_at'])) ??
+          DateTime.now(),
+      finishedAt: DateTime.tryParse(_dbString(rows.first['finished_at'])),
+      tables: _dbInt(rows.first['tables']),
+    );
+  }
+
+  Future<bool> hasCompletedDailyLoginSync({
+    required String username,
+    required String environmentLabel,
+    DateTime? date,
+  }) async {
+    final status = await dailyLoginSyncStatus(
+      username: username,
+      environmentLabel: environmentLabel,
+      date: date,
+    );
+    return status?.completed == true;
+  }
+
+  Future<void> saveDailyLoginSyncStatus({
+    required String username,
+    required String environmentLabel,
+    required LocalSyncStatus status,
+    DateTime? date,
+  }) async {
+    final db = await database;
+    final dayKey = _dailyKey(date ?? DateTime.now());
+    await db.insert('daily_login_sync', {
+      'username': username,
+      'environment_label': environmentLabel,
+      'day_key': dayKey,
+      'completed': status.completed ? 1 : 0,
+      'message': status.message,
+      'started_at': status.startedAt.toIso8601String(),
+      'finished_at': status.finishedAt?.toIso8601String(),
+      'tables': status.tables,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
   Future<void> markTableSynchronized(String tableName) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
@@ -681,6 +773,19 @@ CREATE TABLE IF NOT EXISTS TablaSincronizacionSegmentada (
   Evento TEXT PRIMARY KEY,
   FechaActualizacion TEXT
 )''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS daily_login_sync (
+  username TEXT NOT NULL,
+  environment_label TEXT NOT NULL,
+  day_key TEXT NOT NULL,
+  completed INTEGER NOT NULL,
+  message TEXT,
+  started_at TEXT,
+  finished_at TEXT,
+  tables INTEGER,
+  updated_at TEXT,
+  PRIMARY KEY (username, environment_label, day_key)
+)''');
   }
 
   String _createTableIfNeeded(SyncSchema schema) {
@@ -699,5 +804,36 @@ CREATE TABLE IF NOT EXISTS TablaSincronizacionSegmentada (
     if (parsed == null) return true;
     final nextMidnight = DateTime(parsed.year, parsed.month, parsed.day + 1);
     return DateTime.now().isAfter(nextMidnight);
+  }
+
+  Future<String> _lastSessionUsername(Database db) async {
+    final activeRows = await db.query(
+      'credentials',
+      columns: ['username'],
+      where: 'active = 1',
+      orderBy: 'updated_at DESC',
+      limit: 1,
+    );
+    if (activeRows.isNotEmpty) return _dbString(activeRows.first['username']);
+    final rows = await db.query(
+      'credentials',
+      columns: ['username'],
+      orderBy: 'updated_at DESC',
+      limit: 1,
+    );
+    if (rows.isEmpty) return '';
+    return _dbString(rows.first['username']);
+  }
+
+  bool _isSameDay(DateTime left, DateTime right) {
+    return left.year == right.year &&
+        left.month == right.month &&
+        left.day == right.day;
+  }
+
+  String _dailyKey(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}'
+        '${date.month.toString().padLeft(2, '0')}'
+        '${date.day.toString().padLeft(2, '0')}';
   }
 }

@@ -1034,27 +1034,43 @@ class _SignaturePadState extends State<_SignaturePad> {
           ),
           child: SizedBox(
             height: _lastSize.height,
-            child: Stack(
-              children: [
-                GestureDetector(
-                  onPanStart: (details) => _addPoint(details.localPosition),
-                  onPanUpdate: (details) => _addPoint(details.localPosition),
-                  onPanEnd: (_) => _addPoint(null),
-                  child: CustomPaint(
-                    painter: _SignaturePainter(_points),
-                    size: Size.infinite,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanStart: (details) => _addPoint(details.localPosition),
+                      onPanUpdate: (details) =>
+                          _addPoint(details.localPosition),
+                      onPanEnd: (_) => _endStroke(),
+                      child: CustomPaint(
+                        painter: _SignaturePainter(_points),
+                        size: Size.infinite,
+                      ),
+                    ),
                   ),
-                ),
-                Positioned(
-                  right: 6,
-                  bottom: 6,
-                  child: IconButton.filledTonal(
-                    onPressed: _clear,
-                    tooltip: 'Limpiar',
-                    icon: const Icon(Icons.delete_outline),
+                  Positioned(
+                    right: 54,
+                    bottom: 6,
+                    child: IconButton.filledTonal(
+                      onPressed: _maximize,
+                      tooltip: 'Maximizar firma',
+                      icon: const Icon(Icons.open_in_full),
+                    ),
                   ),
-                ),
-              ],
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: IconButton.filledTonal(
+                      onPressed: _clear,
+                      tooltip: 'Limpiar',
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -1068,6 +1084,7 @@ class _SignaturePadState extends State<_SignaturePad> {
     final canvas = Canvas(recorder);
     final rect = Offset.zero & _lastSize;
     canvas.drawRect(rect, Paint()..color = Colors.white);
+    canvas.clipRect(rect);
     _SignaturePainter(_points).paint(canvas, _lastSize);
     final image = await recorder.endRecording().toImage(
       _lastSize.width.round().clamp(1, 2000).toInt(),
@@ -1080,12 +1097,185 @@ class _SignaturePadState extends State<_SignaturePad> {
     );
   }
 
-  void _addPoint(Offset? offset) {
-    setState(() => _points.add(offset));
+  Future<void> _maximize() async {
+    final result = await Navigator.of(context).push<List<Offset?>>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (context) => _SignatureFullscreenPage(points: _points),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _points
+        ..clear()
+        ..addAll(result);
+    });
+  }
+
+  void _addPoint(Offset offset) {
+    final width = _lastSize.width;
+    final height = _lastSize.height;
+    if (width <= 0 || height <= 0) return;
+    final isInside =
+        offset.dx >= 0 &&
+        offset.dy >= 0 &&
+        offset.dx <= width &&
+        offset.dy <= height;
+    if (!isInside) {
+      _endStroke();
+      return;
+    }
+    setState(() => _points.add(Offset(offset.dx / width, offset.dy / height)));
+  }
+
+  void _endStroke() {
+    if (_points.isEmpty || _points.last == null) return;
+    setState(() => _points.add(null));
   }
 
   void _clear() {
     setState(_points.clear);
+  }
+}
+
+class _SignatureFullscreenPage extends StatefulWidget {
+  const _SignatureFullscreenPage({required this.points});
+
+  final List<Offset?> points;
+
+  @override
+  State<_SignatureFullscreenPage> createState() =>
+      _SignatureFullscreenPageState();
+}
+
+class _SignatureFullscreenPageState extends State<_SignatureFullscreenPage> {
+  late final List<Offset?> _points = List<Offset?>.from(widget.points);
+  Size _lastSize = Size.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(
+      SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]),
+    );
+  }
+
+  @override
+  void dispose() {
+    unawaited(SystemChrome.setPreferredOrientations(const <DeviceOrientation>[]));
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.white,
+      appBar: AppBar(
+        title: const Text('Firma recibido'),
+        actions: [
+          TextButton(
+            onPressed: _accept,
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            children: [
+              const _SignatureWarning(),
+              const SizedBox(height: 12),
+              Expanded(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    border: Border.all(color: AppColors.black),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      _lastSize = Size(
+                        constraints.maxWidth,
+                        constraints.maxHeight,
+                      );
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(7),
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onPanStart: (details) =>
+                                    _addPoint(details.localPosition),
+                                onPanUpdate: (details) =>
+                                    _addPoint(details.localPosition),
+                                onPanEnd: (_) => _endStroke(),
+                                child: CustomPaint(
+                                  painter: _SignaturePainter(_points),
+                                  size: Size.infinite,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 10,
+                              top: 10,
+                              child: IconButton.filledTonal(
+                                onPressed: _clear,
+                                tooltip: 'Limpiar',
+                                icon: const Icon(Icons.delete_outline),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _accept,
+                  icon: const Icon(Icons.check),
+                  label: const Text('Aceptar firma'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _addPoint(Offset offset) {
+    final width = _lastSize.width;
+    final height = _lastSize.height;
+    if (width <= 0 || height <= 0) return;
+    final isInside =
+        offset.dx >= 0 &&
+        offset.dy >= 0 &&
+        offset.dx <= width &&
+        offset.dy <= height;
+    if (!isInside) {
+      _endStroke();
+      return;
+    }
+    setState(() => _points.add(Offset(offset.dx / width, offset.dy / height)));
+  }
+
+  void _endStroke() {
+    if (_points.isEmpty || _points.last == null) return;
+    setState(() => _points.add(null));
+  }
+
+  void _clear() {
+    setState(_points.clear);
+  }
+
+  void _accept() {
+    Navigator.of(context).pop(List<Offset?>.from(_points));
   }
 }
 
@@ -1096,6 +1286,7 @@ class _SignaturePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
     final paint = Paint()
       ..color = Colors.black
       ..strokeWidth = 3
@@ -1105,13 +1296,17 @@ class _SignaturePainter extends CustomPainter {
       final current = points[index];
       final next = points[index + 1];
       if (current == null || next == null) continue;
-      canvas.drawLine(current, next, paint);
+      canvas.drawLine(
+        Offset(current.dx * size.width, current.dy * size.height),
+        Offset(next.dx * size.width, next.dy * size.height),
+        paint,
+      );
     }
   }
 
   @override
   bool shouldRepaint(_SignaturePainter oldDelegate) {
-    return oldDelegate.points.length != points.length;
+    return true;
   }
 }
 
