@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -19,11 +21,13 @@ class AnularGuiaPage extends StatefulWidget {
     required this.appInformation,
     required this.apiConfig,
     required this.offline,
+    this.initialGuideNumber = '',
   });
 
   final AppInformation appInformation;
   final ControllerApiConfig apiConfig;
   final bool offline;
+  final String initialGuideNumber;
 
   @override
   State<AnularGuiaPage> createState() => _AnularGuiaPageState();
@@ -41,8 +45,15 @@ class _AnularGuiaPageState extends State<AnularGuiaPage> {
       appInformation: widget.appInformation,
       apiConfig: widget.apiConfig,
       offline: widget.offline,
+      initialGuideNumber: widget.initialGuideNumber,
     )..addListener(_handleControllerEvents);
-    _controller.initialize();
+    unawaited(_initializeController());
+  }
+
+  Future<void> _initializeController() async {
+    await _controller.initialize();
+    if (!mounted || widget.initialGuideNumber.trim().isEmpty) return;
+    await _controller.consultGuide();
   }
 
   @override

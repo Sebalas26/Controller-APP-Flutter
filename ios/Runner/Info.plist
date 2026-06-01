@@ -34,6 +34,10 @@
 	<string>$(YAAP_PASSWORD)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Se usa la camara para registrar la evidencia del paquete entregado.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>

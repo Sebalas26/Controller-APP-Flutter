@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../../../shared/theme/app_colors.dart';
+import '../../../anular_guia/anular_guia.dart';
 import '../../impresion/impresion.dart';
+import '../../models/vender_models.dart';
 import '../controllers/vender_flow_controller.dart';
 import '../widgets/vender_form_widgets.dart';
 
@@ -16,119 +20,121 @@ class VenderAdmissionSuccessView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = controller.admissionSuccessState;
-    if (state == null) {
-      return const VenderEmptyState(
-        icon: Icons.check_circle_outline,
-        title: 'Sin guia admitida',
-        message: 'No hay una admision sincronizada para mostrar.',
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Icon(Icons.check_circle, size: 74, color: Color(0xFF11A35C)),
-        const SizedBox(height: 18),
-        const Text(
-          'Envio admitido con exito',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          state.message.trim().isEmpty
-              ? 'La guia fue creada correctamente.'
-              : state.message,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFF696F79),
-            fontWeight: FontWeight.w700,
+    final guides = controller.collectionState?.guides ?? const [];
+    if (guides.isEmpty) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFFEFEFE),
+        body: SafeArea(
+          child: VenderEmptyState(
+            icon: Icons.check_circle_outline,
+            title: 'Sin guia admitida',
+            message: 'No hay una admision sincronizada para mostrar.',
           ),
         ),
-        const SizedBox(height: 22),
-        _GuideNumberBlock(number: state.supplyNumber),
-        const SizedBox(height: 18),
-        _SuccessInfoLine('Guia', state.guide.guideNumber),
-        _SuccessInfoLine('Recogida', state.guide.idPickup.toString()),
-        _SuccessInfoLine('Prefactura', state.guide.idPreInvoice.toString()),
-        const SizedBox(height: 22),
-        const Text(
-          'Desea agregar un nuevo envio',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFFEFEFE),
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final buttonGap = guides.length == 1
+                ? (constraints.maxHeight - 376).clamp(24.0, 260.0).toDouble()
+                : 24.0;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 28),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 52,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _SuccessToast(),
+                    const SizedBox(height: 24),
+                    ...guides.map(
+                      (guide) => Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _AdmittedGuideCard(
+                          controller: controller,
+                          guide: guide,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(height: buttonGap),
+                    _SuccessButton(
+                      label: 'Continuar',
+                      filled: true,
+                      onPressed: () => runAction(
+                        () async => controller.goToBillingSummary(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _SuccessButton(
+                      label: 'Agregar otro envío',
+                      filled: false,
+                      onPressed: () => runAction(
+                        () async => controller.resetForAdditionalAdmission(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
-        const SizedBox(height: 14),
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            const _SuccessAction(
-              icon: Icons.add_box_outlined,
-              label: 'Si, agregar',
-              enabled: false,
-            ),
-            _SuccessAction(
-              icon: Icons.print_outlined,
-              label: 'Imprimir',
-              enabled: true,
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) =>
-                        VenderPrintPage(guideNumber: state.guide.guideNumber),
-                  ),
-                );
-              },
-            ),
-            const _SuccessAction(
-              icon: Icons.block_outlined,
-              label: 'Anular',
-              enabled: false,
-            ),
-            _SuccessAction(
-              icon: Icons.receipt_long_outlined,
-              label: 'No',
-              enabled: true,
-              onPressed: () =>
-                  runAction(() async => controller.goToBillingSummary()),
-            ),
-          ],
-        ),
-      ],
+      ),
     );
   }
 }
 
-class _GuideNumberBlock extends StatelessWidget {
-  const _GuideNumberBlock({required this.number});
-
-  final String number;
+class _SuccessToast extends StatelessWidget {
+  const _SuccessToast();
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFF9F9F9),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1E6EF)),
+        color: const Color(0xFFF4FBF8),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(3),
+          bottomLeft: Radius.circular(3),
+          topRight: Radius.circular(8),
+          bottomRight: Radius.circular(8),
+        ),
+        border: const Border(
+          left: BorderSide(color: AppColors.green, width: 4),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF575757).withValues(alpha: 0.15),
+            offset: const Offset(-4, 8),
+            blurRadius: 20,
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-        child: Column(
+      child: const Padding(
+        padding: EdgeInsets.fromLTRB(12, 8, 8, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Suministro usado',
-              style: TextStyle(
-                color: Color(0xFF696F79),
-                fontWeight: FontWeight.w800,
+            Icon(Icons.check_circle_outline, color: AppColors.green, size: 20),
+            SizedBox(width: 8),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(top: 3),
+                child: Text(
+                  'Envío admitido con éxito.',
+                  style: TextStyle(
+                    color: AppColors.black,
+                    fontFamily: 'Montserrat',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              number.trim().isEmpty ? '-' : number,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
             ),
           ],
         ),
@@ -137,72 +143,234 @@ class _GuideNumberBlock extends StatelessWidget {
   }
 }
 
-class _SuccessAction extends StatelessWidget {
-  const _SuccessAction({
-    required this.icon,
-    required this.label,
-    required this.enabled,
-    this.onPressed,
-  });
+class _AdmittedGuideCard extends StatelessWidget {
+  const _AdmittedGuideCard({required this.controller, required this.guide});
 
-  final IconData icon;
-  final String label;
-  final bool enabled;
-  final VoidCallback? onPressed;
+  final VenderFlowController controller;
+  final VenderCollectionGuide guide;
 
   @override
   Widget build(BuildContext context) {
-    final background = enabled ? const Color(0xFF212529) : Colors.white;
-    final foreground = enabled ? Colors.white : const Color(0xFF696F79);
-    return SizedBox(
-      width: 156,
-      height: 62,
-      child: Material(
-        color: background,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: enabled ? const Color(0xFF212529) : const Color(0xFFE1E6EF),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEFEFE),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF575757).withValues(alpha: 0.15),
+            offset: const Offset(-2, 4),
+            blurRadius: 12,
           ),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: enabled ? onPressed : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                Icon(icon, color: foreground, size: 20),
-                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: foreground,
-                          fontWeight: FontWeight.w800,
-                        ),
+                  child: Text(
+                    guide.guideNumber,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.black,
+                      fontFamily: 'Montserrat',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _copyGuide(context, guide.guideNumber),
+                  tooltip: 'Copiar guía',
+                  icon: const Icon(
+                    Icons.copy_outlined,
+                    color: AppColors.accent,
+                    size: 20,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            VenderPrintPage(guideNumber: guide.guideNumber),
                       ),
-                      if (!enabled)
-                        const Text(
-                          'No disponible',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Color(0xFF9AA1AA),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                    ],
+                    );
+                  },
+                  tooltip: 'Imprimir',
+                  icon: const Icon(
+                    Icons.print_outlined,
+                    color: AppColors.accent,
+                    size: 22,
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _destinationTitle(guide),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF727272),
+                fontFamily: 'Montserrat',
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            Text(
+              _detailText(guide),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF727272),
+                fontFamily: 'Montserrat',
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    guide.paymentMethodLabel.trim().isEmpty
+                        ? 'Forma de pago'
+                        : guide.paymentMethodLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF727272),
+                      fontFamily: 'Montserrat',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  r'$',
+                  style: TextStyle(
+                    color: AppColors.black,
+                    fontFamily: 'Montserrat',
+                    fontSize: 16,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    _money(guide.shouldChargeNow ? guide.totalValue : 0),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.black,
+                      fontFamily: 'Montserrat',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => AnularGuiaPage(
+                        appInformation: controller.appInformation,
+                        apiConfig: controller.apiConfig,
+                        offline: controller.offline,
+                        initialGuideNumber: guide.guideNumber,
+                      ),
+                    ),
+                  );
+                },
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 40),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  foregroundColor: AppColors.accent,
+                ),
+                child: const Text(
+                  'Anular guía',
+                  style: TextStyle(
+                    fontFamily: 'Montserrat',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _destinationTitle(VenderCollectionGuide guide) {
+    final text = guide.destinationCity.trim();
+    if (text.isNotEmpty) return text;
+    return 'Guía admitida';
+  }
+
+  String _detailText(VenderCollectionGuide guide) {
+    final address = guide.recipientAddress.trim();
+    if (address.isNotEmpty) return address;
+    final recipientName = guide.recipientName.trim();
+    if (recipientName.isNotEmpty) return recipientName;
+    return 'Destinatario sin nombre';
+  }
+
+  Future<void> _copyGuide(BuildContext context, String guideNumber) async {
+    await Clipboard.setData(ClipboardData(text: guideNumber));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Guía $guideNumber copiada.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
+class _SuccessButton extends StatelessWidget {
+  const _SuccessButton({
+    required this.label,
+    required this.filled,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool filled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: filled ? AppColors.black : const Color(0xFFFEFEFE),
+      elevation: 8,
+      shadowColor: const Color(0xFF575757).withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          height: 40,
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: filled ? const Color(0xFFFEFEFE) : AppColors.black,
+                fontFamily: 'Montserrat',
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ),
@@ -211,37 +379,13 @@ class _SuccessAction extends StatelessWidget {
   }
 }
 
-class _SuccessInfoLine extends StatelessWidget {
-  const _SuccessInfoLine(this.label, this.value);
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 112,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF696F79),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value.trim().isEmpty || value == '0' ? '-' : value,
-              textAlign: TextAlign.end,
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
+String _money(double value) {
+  final normalized = value.round().toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < normalized.length; i++) {
+    final remaining = normalized.length - i;
+    buffer.write(normalized[i]);
+    if (remaining > 1 && remaining % 3 == 1) buffer.write('.');
   }
+  return buffer.toString();
 }

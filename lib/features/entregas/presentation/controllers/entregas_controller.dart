@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../../shared/network/controller_api_config.dart';
 import '../../../login/login.dart';
+import '../../../pagos/pagos.dart';
 import '../../data/entregas_local_repository.dart';
 import '../../data/entregas_remote_repository.dart';
 import '../../models/entregas_models.dart';
@@ -23,16 +24,21 @@ class EntregasController extends ChangeNotifier {
     required this.offline,
     EntregasLocalRepository? localRepository,
     EntregasRemoteRepository? remoteRepository,
+    PagosRemoteRepository? paymentsRepository,
     this.imageCompressor,
   }) : localRepository = localRepository ?? EntregasLocalRepository(),
-       remoteRepository = remoteRepository ?? EntregasRemoteRepository();
+       remoteRepository = remoteRepository ?? EntregasRemoteRepository(),
+       paymentsRepository = paymentsRepository ?? PagosRemoteRepository();
 
   final AppInformation appInformation;
   final ControllerApiConfig apiConfig;
   final bool offline;
   final EntregasLocalRepository localRepository;
   final EntregasRemoteRepository remoteRepository;
+  final PagosRemoteRepository paymentsRepository;
   final EntregaImageCompressor? imageCompressor;
+
+  final Map<String, PagoOperationResult> _paymentTransactions = {};
 
   EntregaGuideStatus selectedStatus = EntregaGuideStatus.enZona;
   bool loading = false;
@@ -233,8 +239,14 @@ class EntregasController extends ChangeNotifier {
     required String signatureBase64,
     required String photoBase64,
     required bool isQr,
+    required int paymentMethodId,
   }) async {
     _validateDelivery(recipient, signatureBase64, photoBase64);
+    await _ensureDeliveryPayment(
+      guide: guide,
+      recipient: recipient,
+      paymentMethodId: paymentMethodId,
+    );
     await _saveAndSync(
       guide: guide,
       type: EntregaDownloadType.entregaCorrectaMensajero,
@@ -245,6 +257,7 @@ class EntregasController extends ChangeNotifier {
         photoBase64: photoBase64,
         reason: null,
         type: EntregaDownloadType.entregaCorrectaMensajero,
+        paymentMethodId: paymentMethodId,
       ),
       isQr: isQr,
     );
@@ -276,9 +289,78 @@ class EntregasController extends ChangeNotifier {
         photoBase64: '',
         reason: reason,
         type: EntregaDownloadType.devolucionMensajero,
+        paymentMethodId: PagoMethodIds.cash,
       ),
       isQr: isQr,
     );
+  }
+
+  Future<void> _ensureDeliveryPayment({
+    required EntregaGuide guide,
+    required EntregaRecipientData recipient,
+    required int paymentMethodId,
+  }) async {
+    if (guide.valueToCollect <= 0 || paymentMethodId == PagoMethodIds.cash) {
+      return;
+    }
+    if (paymentMethodId == PagoMethodIds.interPay) {
+      throw const EntregaException(
+        'Inter Pay requiere validacion de codigo prepago. Ese flujo aun no esta disponible en Flutter.',
+      );
+    }
+    if (!PagoMethodIds.isRemote(paymentMethodId)) {
+      throw EntregaException(
+        'El medio de pago ${PagoMethodIds.nameFor(paymentMethodId)} no esta disponible para entregas.',
+      );
+    }
+    if (offline) {
+      throw const EntregaException(
+        'No es posible confirmar pagos digitales en modo offline.',
+      );
+    }
+
+    syncing = true;
+    errorMessage = null;
+    statusMessage =
+        'Confirmando pago ${PagoMethodIds.nameFor(paymentMethodId)}.';
+    notifyListeners();
+    try {
+      final existing = _paymentTransactions[guide.guideNumber];
+      final result = await paymentsRepository.sendOrSynchronize(
+        config: apiConfig,
+        request: PagoNotificationRequest(
+          flow: PagoFlowType.entrega,
+          methodId: paymentMethodId,
+          amount: guide.valueToCollect,
+          phone: recipient.phone.trim().isNotEmpty
+              ? recipient.phone
+              : guide.phone,
+          email: '',
+          guides: [guide.guideNumber],
+          preInvoiceId: '0',
+          serviceCenterId: appInformation.idCentroServicio,
+          userId: appInformation.idUsuario,
+          identifier: appInformation.idDispositivo.trim().isNotEmpty
+              ? appInformation.idDispositivo.trim()
+              : appInformation.idMensajero,
+        ),
+        existingTransactionId: existing?.transactionId ?? 0,
+      );
+      _paymentTransactions[guide.guideNumber] = result;
+      final transaction = result.transactionId > 0
+          ? ' Solicitud ${result.transactionId}.'
+          : '';
+      if (!result.isApproved) {
+        statusMessage =
+            'Pago ${PagoMethodIds.nameFor(paymentMethodId)} pendiente.$transaction Estado: ${result.displayStatus}.';
+        throw EntregaException(statusMessage);
+      }
+      statusMessage =
+          'Pago ${PagoMethodIds.nameFor(paymentMethodId)} aprobado.$transaction';
+    } finally {
+      syncing = false;
+      notifyListeners();
+    }
   }
 
   Future<void> syncPending() async {
@@ -488,6 +570,7 @@ class EntregasController extends ChangeNotifier {
     required String photoBase64,
     required EntregaReason? reason,
     required EntregaDownloadType type,
+    required int paymentMethodId,
   }) {
     final now = _formatControllerDate(DateTime.now());
     final guideNumber = int.tryParse(guide.guideNumber) ?? 0;
@@ -497,7 +580,7 @@ class EntregasController extends ChangeNotifier {
       'EsAuditor': 0,
       'EsMaestra': 0,
       'EsOffline': 0,
-      'EsPagoQR': 'false',
+      'EsPagoQR': PagoMethodIds.isLegacyQr(paymentMethodId) ? 'true' : 'false',
       'EsSello': 'false',
       'FechaAsignacion': guide.assignmentDate,
       'FechaEntrega': guide.auditDate.trim().isNotEmpty ? guide.auditDate : now,
@@ -515,6 +598,7 @@ class EntregasController extends ChangeNotifier {
             },
       'IdCiudad': appInformation.idCiudad,
       'IdEstado': 0,
+      'MedioPago': paymentMethodId,
       'IdMensajero': int.tryParse(appInformation.idMensajero) ?? 0,
       'IdPlanilla': guide.planSheet,
       'IdServicio': guide.serviceId,

@@ -263,6 +263,31 @@ class VenderRemoteRepository {
     );
   }
 
+  Future<String> fetchFrameworkParameter({
+    required ControllerApiConfig config,
+    required AppInformation appInformation,
+    required String code,
+  }) async {
+    final parameter = code.trim();
+    if (parameter.isEmpty) return '';
+    final client = _httpClient.client(
+      config.controllerBaseUrl,
+      headerSource: appInformation,
+    );
+    final response = await client.get<dynamic>(
+      'ParametrosFramework/ConsultarParametrosFramework/${Uri.encodeComponent(parameter)}',
+      options: Options(
+        responseType: ResponseType.plain,
+        validateStatus: (status) => status != null && status < 600,
+      ),
+    );
+    final statusCode = response.statusCode ?? 0;
+    if (statusCode < 200 || statusCode >= 300 || response.data == null) {
+      return '';
+    }
+    return response.data.toString().replaceAll('"', '').trim();
+  }
+
   Future<void> _markSupplyUsed({
     required ControllerApiConfig config,
     required _IntegrationAuth auth,

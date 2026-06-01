@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/config/app_environment.dart';
 import '../../../shared/constants/app_assets.dart';
+import '../../../shared/network/network_status_monitor.dart';
 import '../../login/login.dart' show ModuleApp;
 import '../models/controller_session.dart';
 import '../models/home_module.dart';
@@ -37,11 +40,35 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _guideController = TextEditingController();
+  late final NetworkStatusMonitor _networkStatusMonitor;
+  StreamSubscription<bool>? _networkStatusSubscription;
+  bool? _connected;
+
+  bool get _isConnected => _connected ?? !widget.session.offline;
+
+  @override
+  void initState() {
+    super.initState();
+    _networkStatusMonitor = NetworkStatusMonitor()
+      ..start(initialStatus: !widget.session.offline);
+    _networkStatusSubscription = _networkStatusMonitor.status.listen((
+      connected,
+    ) {
+      if (!mounted) return;
+      setState(() => _connected = connected);
+    });
+  }
 
   @override
   void dispose() {
+    unawaited(_networkStatusSubscription?.cancel());
+    _networkStatusMonitor.dispose();
     _guideController.dispose();
     super.dispose();
+  }
+
+  ControllerSession _effectiveSession() {
+    return widget.session.copyWith(offline: !_isConnected);
   }
 
   void _openModule(AppModule module) {
@@ -49,7 +76,7 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(
         builder: (_) => ModulePage(
           module: module,
-          session: widget.session,
+          session: _effectiveSession(),
           config: EnvironmentConfig.of(widget.environment),
         ),
       ),
@@ -119,21 +146,22 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final primaryModules = _configuredModules(primary: true);
     final functionalModules = _configuredModules(primary: false);
-    final footerUser = widget.session.username.trim().isNotEmpty
-        ? widget.session.username.trim().toUpperCase()
-        : widget.session.displayName.toUpperCase();
+    final effectiveSession = _effectiveSession();
+    final footerUser = effectiveSession.username.trim().isNotEmpty
+        ? effectiveSession.username.trim().toUpperCase()
+        : effectiveSession.displayName.toUpperCase();
     final footerText =
-        '$footerUser - ID ${widget.session.appInformation.idCentroServicio}'
+        '$footerUser - ID ${effectiveSession.appInformation.idCentroServicio}'
         ' - V ${AppStrings.appVersionName}'
-        ' - M${widget.session.appInformation.idMensajero}';
+        ' - M${effectiveSession.appInformation.idMensajero}';
     final sessionInfoText =
-        '$footerText - ${widget.session.offline ? 'Offline' : 'Online'}';
+        '$footerText - ${effectiveSession.offline ? 'Offline' : 'Online'}';
 
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: const Color(0xFFFEFEFE),
       drawer: AppNavigationDrawer(
-        session: widget.session,
+        session: effectiveSession,
         environment: widget.environment,
         onEnvironmentChanged: widget.onEnvironmentChanged,
         onLogout: widget.onLogout,
@@ -148,7 +176,7 @@ class _HomePageState extends State<HomePage> {
                   MaterialPageRoute(builder: (_) => const NotificationsPage()),
                 );
               },
-              offline: widget.session.offline,
+              offline: effectiveSession.offline,
             ),
             HomeSessionInfo(userDetails: sessionInfoText),
             Expanded(

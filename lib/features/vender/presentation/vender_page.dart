@@ -9,6 +9,7 @@ import 'views/vender_billing_summary_view.dart';
 import 'views/vender_initial_view.dart';
 import 'views/vender_person_view.dart';
 import 'views/vender_payment_view.dart';
+import 'views/vender_pickup_closed_view.dart';
 import 'views/vender_settlement_view.dart';
 import 'views/vender_summary_view.dart';
 import 'widgets/vender_form_widgets.dart';
@@ -81,6 +82,28 @@ class _VenderPageState extends State<VenderPage> {
       );
     }
 
+    if (_controller.currentStep == 5) {
+      return VenderAdmissionSuccessView(
+        controller: _controller,
+        runAction: _runAction,
+      );
+    }
+
+    if (_controller.currentStep == 6) {
+      return VenderBillingSummaryView(
+        controller: _controller,
+        runAction: _runAction,
+        onBack: _goBack,
+      );
+    }
+
+    if (_controller.currentStep == 7) {
+      return VenderPickupClosedView(
+        controller: _controller,
+        onFinish: () => Navigator.of(context).maybePop(),
+      );
+    }
+
     return _VenderNativeScaffold(
       title: _titleForStep(),
       onBack: _goBack,
@@ -100,6 +123,10 @@ class _VenderPageState extends State<VenderPage> {
   }
 
   void _goBack() {
+    if (_controller.currentStep == 6) {
+      _controller.backToAdmissionSuccess();
+      return;
+    }
     if (_controller.currentStep == 0 || _controller.currentStep >= 5) {
       Navigator.of(context).maybePop();
       return;
@@ -118,11 +145,11 @@ class _VenderPageState extends State<VenderPage> {
       case 3:
         return 'Datos Destinatario';
       case 4:
-        return 'Resumen Admision';
+        return 'Confirmar datos';
       case 5:
         return 'Envio Admitido';
       case 6:
-        return 'Facturar';
+        return 'Resumen de venta';
       default:
         return 'Cobrar';
     }
@@ -163,7 +190,11 @@ class _VenderPageState extends State<VenderPage> {
           runAction: _runAction,
         );
       case 6:
-        return VenderBillingSummaryView(controller: _controller);
+        return VenderBillingSummaryView(
+          controller: _controller,
+          runAction: _runAction,
+          onBack: _goBack,
+        );
       default:
         return VenderPaymentView(controller: _controller);
     }

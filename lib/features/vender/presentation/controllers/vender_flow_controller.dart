@@ -1,12 +1,15 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../../../shared/network/controller_api_config.dart';
 import '../../../login/login.dart';
+import '../../../pagos/pagos.dart';
 import '../../impresion/impresion.dart';
 import '../../data/vender_local_repository.dart';
 import '../../data/vender_remote_repository.dart';
+import '../../data/vender_whatsapp_service.dart';
 import '../../models/vender_models.dart';
 
 enum VenderPersonKind { sender, recipient }
@@ -19,9 +22,13 @@ class VenderFlowController extends ChangeNotifier {
     VenderLocalRepository? localRepository,
     VenderRemoteRepository? remoteRepository,
     VenderPrintLocalRepository? printRepository,
+    VenderWhatsappService? whatsappService,
+    PagosRemoteRepository? paymentsRepository,
   }) : localRepository = localRepository ?? VenderLocalRepository(),
        remoteRepository = remoteRepository ?? VenderRemoteRepository(),
-       printRepository = printRepository ?? VenderPrintLocalRepository();
+       printRepository = printRepository ?? VenderPrintLocalRepository(),
+       whatsappService = whatsappService ?? const VenderWhatsappService(),
+       paymentsRepository = paymentsRepository ?? PagosRemoteRepository();
 
   final AppInformation appInformation;
   final ControllerApiConfig apiConfig;
@@ -29,6 +36,8 @@ class VenderFlowController extends ChangeNotifier {
   final VenderLocalRepository localRepository;
   final VenderRemoteRepository remoteRepository;
   final VenderPrintLocalRepository printRepository;
+  final VenderWhatsappService whatsappService;
+  final PagosRemoteRepository paymentsRepository;
 
   final preGuide = TextEditingController();
   final pieces = TextEditingController(text: '1');
@@ -473,25 +482,69 @@ class VenderFlowController extends ChangeNotifier {
   void selectCollectionPaymentMethod(int value) {
     final collection = collectionState;
     if (collection == null) return;
-    collectionState = collection.copyWith(selectedPaymentMethodId: value);
+    collectionState = collection.copyWith(
+      selectedPaymentMethodId: value,
+      confirmed: false,
+      clearPaymentTracking: true,
+    );
     notifyListeners();
   }
 
   Future<void> confirmCollection() async {
-    await _guard(() async {
-      final collection = collectionState;
-      if (collection == null) {
-        throw const VenderLocalException('No hay cobro pendiente.');
-      }
-      collectionState = collection.copyWith(confirmed: true);
-      final methodName = collection.selectedPaymentMethodName;
-      final amount = _money(collection.totalToCharge);
-      statusMessage = collection.totalToCharge <= 0
-          ? 'Admision sincronizada sin valor contado por cobrar.'
-          : collection.selectedPaymentMethodId == VenderPaymentMethods.cash
-          ? 'Cobro en efectivo confirmado por $amount.'
-          : 'Cobro $methodName listo para continuar por $amount.';
+    await _remoteGuard(() async {
+      await _confirmCollectionPayment();
     });
+  }
+
+  Future<void> _confirmCollectionPayment() async {
+    final collection = collectionState;
+    if (collection == null) {
+      throw const VenderLocalException('No hay cobro pendiente.');
+    }
+    final methodName = collection.selectedPaymentMethodName;
+    final amount = _money(collection.totalToCharge);
+    if (collection.totalToCharge <= 0 ||
+        collection.selectedPaymentMethodId == VenderPaymentMethods.cash) {
+      collectionState = collection.copyWith(
+        confirmed: true,
+        paymentStatus: 'Aprobado',
+        paymentMessage: collection.totalToCharge <= 0
+            ? 'Admision sincronizada sin valor contado por cobrar.'
+            : 'Cobro en efectivo confirmado por $amount.',
+      );
+      statusMessage = collectionState!.paymentMessage;
+      return;
+    }
+    if (collection.selectedPaymentMethodId == VenderPaymentMethods.interPay) {
+      throw const VenderRemoteException(
+        'Inter Pay requiere validacion de codigo prepago. Ese flujo aun no esta disponible en Flutter.',
+      );
+    }
+    if (!collection.requiresRemotePayment) {
+      throw VenderRemoteException(
+        'El medio de pago $methodName no tiene flujo remoto disponible.',
+      );
+    }
+    final result = await paymentsRepository.sendOrSynchronize(
+      config: apiConfig,
+      request: _paymentRequestFor(collection),
+      existingTransactionId: collection.paymentTransactionId,
+    );
+    final message = _paymentMessage(
+      methodName: methodName,
+      amount: amount,
+      result: result,
+    );
+    collectionState = collection.copyWith(
+      confirmed: result.isApproved,
+      paymentTransactionId: result.transactionId,
+      paymentStatus: result.displayStatus,
+      paymentMessage: message,
+    );
+    statusMessage = message;
+    if (!result.isApproved) {
+      throw VenderRemoteException(message);
+    }
   }
 
   void goToBillingSummary() {
@@ -503,12 +556,28 @@ class VenderFlowController extends ChangeNotifier {
     _advanceTo(6);
   }
 
+  void backToAdmissionSuccess() {
+    final collection = collectionState;
+    if (collection == null || collection.guides.isEmpty) return;
+    currentStep = 5;
+    notifyListeners();
+  }
+
   Future<void> invoiceAdmittedGuides() async {
     await _remoteGuard(() async {
-      final collection = collectionState;
+      var collection = collectionState;
       if (collection == null || collection.guides.isEmpty) {
         throw const VenderLocalException(
           'No hay guias admitidas para facturar.',
+        );
+      }
+      if (!collection.confirmed) {
+        await _confirmCollectionPayment();
+        collection = collectionState;
+      }
+      if (collection == null || !collection.confirmed) {
+        throw const VenderRemoteException(
+          'Confirma el pago antes de cerrar la recogida.',
         );
       }
       final result = await remoteRepository.executePickup(
@@ -527,9 +596,153 @@ class VenderFlowController extends ChangeNotifier {
     });
   }
 
+  PagoNotificationRequest _paymentRequestFor(VenderCollectionState collection) {
+    final chargedGuides = collection.guides
+        .where((guide) => guide.shouldChargeNow)
+        .toList();
+    final effectiveGuides = chargedGuides.isEmpty
+        ? collection.guides
+        : chargedGuides;
+    final firstGuide = effectiveGuides.first;
+    return PagoNotificationRequest(
+      flow: PagoFlowType.admision,
+      methodId: collection.selectedPaymentMethodId,
+      amount: collection.totalToCharge.round(),
+      phone: firstGuide.senderPhone,
+      email: firstGuide.senderEmail,
+      guides: effectiveGuides.map((guide) => guide.guideNumber).toList(),
+      preInvoiceId: collection.idPreInvoice.toString(),
+      serviceCenterId: appInformation.idCentroServicio,
+      userId: appInformation.idUsuario,
+      identifier: appInformation.idDispositivo.trim().isNotEmpty
+          ? appInformation.idDispositivo.trim()
+          : appInformation.idMensajero,
+    );
+  }
+
+  String _paymentMessage({
+    required String methodName,
+    required String amount,
+    required PagoOperationResult result,
+  }) {
+    final transaction = result.transactionId > 0
+        ? ' Solicitud ${result.transactionId}.'
+        : '';
+    if (result.isApproved) {
+      return 'Pago $methodName aprobado por $amount.$transaction';
+    }
+    final remoteMessage = result.message.trim().isNotEmpty
+        ? ' ${result.message.trim()}'
+        : '';
+    return 'Pago $methodName pendiente por $amount.$transaction Estado: ${result.displayStatus}.$remoteMessage';
+  }
+
+  Future<void> shareInvoiceByWhatsapp(String phone) async {
+    await _remoteGuard(() async {
+      final collection = collectionState;
+      if (collection == null || !collection.pickupExecuted) {
+        throw const VenderLocalException(
+          'Cierra la recogida antes de compartir.',
+        );
+      }
+      final normalizedPhone = _normalizedWhatsappPhone(phone);
+      final invoiceNumber = collection.invoiceNumber.trim();
+      if (invoiceNumber.isEmpty) {
+        throw const VenderLocalException(
+          'No se encontro el numero de comprobante para compartir.',
+        );
+      }
+      final shortener = await _invoiceShortenerUrl();
+      if (shortener.isEmpty) {
+        throw const VenderRemoteException(
+          'No fue posible consultar el link del comprobante.',
+        );
+      }
+      final message = _invoiceWhatsappMessage(
+        collection: collection,
+        invoiceShortenerUrl: shortener,
+      );
+      final opened = await whatsappService.shareInvoice(
+        nationalPhone: '57$normalizedPhone',
+        message: message,
+      );
+      if (!opened) {
+        throw const VenderLocalException(
+          'Para enviar el comprobante, necesitas tener WhatsApp instalado y en su ultima version.',
+        );
+      }
+      statusMessage = 'Comprobante listo para compartir por WhatsApp.';
+    });
+  }
+
   Future<void> resetForNewAdmission() async {
     _clearForm();
     await initialize();
+  }
+
+  Future<void> resetForAdditionalAdmission() async {
+    final currentCollection = collectionState;
+    _clearForm();
+    collectionState = currentCollection;
+    await initialize();
+    statusMessage = 'Agrega otro envio a la misma recogida.';
+    notifyListeners();
+  }
+
+  String _normalizedWhatsappPhone(String value) {
+    final phone = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (phone.length < 10) {
+      throw const VenderLocalException(
+        'El numero celular debe ser de 10 digitos.',
+      );
+    }
+    final normalized = phone.length > 10
+        ? phone.substring(phone.length - 10)
+        : phone;
+    if (normalized.startsWith('0')) {
+      throw const VenderLocalException(
+        'El numero celular no debe iniciar con 0.',
+      );
+    }
+    return normalized;
+  }
+
+  Future<String> _invoiceShortenerUrl() async {
+    final parameterCode = 'ShortenerUrlFactura${apiConfig.label}';
+    final localValue = catalogs?.parameters[parameterCode]?.trim() ?? '';
+    if (localValue.isNotEmpty) return localValue.replaceAll('"', '').trim();
+    return remoteRepository.fetchFrameworkParameter(
+      config: apiConfig,
+      appInformation: appInformation,
+      code: parameterCode,
+    );
+  }
+
+  String _invoiceWhatsappMessage({
+    required VenderCollectionState collection,
+    required String invoiceShortenerUrl,
+  }) {
+    final senderName = collection.guides.first.senderName.trim().isEmpty
+        ? 'Cliente'
+        : collection.guides.first.senderName.trim();
+    final encodedInvoice = base64Encode(
+      utf8.encode(collection.invoiceNumber.trim()),
+    );
+    final admissions = collection.guides
+        .map((guide) {
+          final city = guide.destinationCity.split('\\').first.trim();
+          final destination = city.isEmpty ? 'Destino' : city;
+          final payment = guide.paymentMethodLabel.trim().isEmpty
+              ? 'Forma de pago'
+              : guide.paymentMethodLabel.trim();
+          return '${guide.guideNumber} - $payment - $destination';
+        })
+        .join('\n');
+    return '¡Hola $senderName! 👋Estamos generando el comprobante de venta '
+        'por medio del siguiente link podrás descargarlo, recuerda que la '
+        'factura electrónica se te enviara al correo electrónico registrado\n\n'
+        '$invoiceShortenerUrl$encodedInvoice\n'
+        'Estas son tus guías admitidas:\n$admissions\n';
   }
 
   void calculateVolumeWeight() {

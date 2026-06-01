@@ -117,6 +117,10 @@ class EnvironmentConfig {
       auditoriaPesosBaseUrl: auditoriaPesos,
       auditoriaAuthBaseUrl: auditoriaPesosAuth,
       mensajeTextoBaseUrl: mensajeTexto,
+      mediosPagoLegacyBaseUrl: mediosPagoLegacy,
+      mediosPagoBaseUrl: mediosPago,
+      mediosPagoAuthBaseUrl: urls[29],
+      mediosPagoOnPremiseBaseUrl: mediosPagoOnPremise,
     );
   }
 

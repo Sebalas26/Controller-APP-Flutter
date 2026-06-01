@@ -14,10 +14,17 @@ class AnularGuiaController extends ChangeNotifier {
     required this.appInformation,
     required this.apiConfig,
     required this.offline,
+    String initialGuideNumber = '',
     AnularGuiaRemoteRepository? remoteRepository,
     ControllerNativeBridge? nativeBridge,
   }) : remoteRepository = remoteRepository ?? AnularGuiaRemoteRepository(),
-       nativeBridge = nativeBridge ?? ControllerNativeBridge();
+       nativeBridge = nativeBridge ?? ControllerNativeBridge() {
+    final guideNumber = _cleanGuide(initialGuideNumber);
+    if (guideNumber.isNotEmpty) {
+      guiaController.text = guideNumber;
+      step = AnularGuiaStep.guia;
+    }
+  }
 
   final AppInformation appInformation;
   final ControllerApiConfig apiConfig;

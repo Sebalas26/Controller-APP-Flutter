@@ -4,11 +4,14 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../shared/native/controller_native_bridge.dart';
 import '../../../shared/network/controller_api_config.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../login/login.dart';
+import '../../multientrega/multientrega.dart';
+import '../../pagos/pagos.dart';
 import '../models/entregas_models.dart';
 import 'controllers/entregas_controller.dart';
 
@@ -224,16 +227,7 @@ class _EntregasPageState extends State<EntregasPage> {
         ListView(
           padding: const EdgeInsets.fromLTRB(16, 15, 16, 92),
           children: [
-            _DeliveryModeSwitch(
-              onMultiple: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Multientrega no disponible por ahora.'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-            ),
+            _DeliveryModeSwitch(onMultiple: _openMultientrega),
             const SizedBox(height: 20),
             _NativeSearchField(
               controller: _searchController,
@@ -250,8 +244,10 @@ class _EntregasPageState extends State<EntregasPage> {
               _GuideSummary(
                 guide: searched,
                 style: _GuideSummaryStyle.zone,
+                onOpen: () =>
+                    _openGuideExplorer(searched, isQr: _lastSearchWasQr),
                 onDeliver: () =>
-                    _openDelivery(searched, isQr: _lastSearchWasQr),
+                    _openGuideExplorer(searched, isQr: _lastSearchWasQr),
                 onReturn: () => _openReturn(searched, isQr: _lastSearchWasQr),
               ),
             ],
@@ -280,8 +276,11 @@ class _EntregasPageState extends State<EntregasPage> {
             : _selectedModule == _EntregaModule.entregadas
             ? _GuideSummaryStyle.delivered
             : _GuideSummaryStyle.returned,
+        onOpen: _selectedModule == _EntregaModule.enZona
+            ? () => _openGuideExplorer(guide, isQr: false)
+            : null,
         onDeliver: _selectedModule == _EntregaModule.enZona
-            ? () => _openDelivery(guide, isQr: false)
+            ? () => _openGuideExplorer(guide, isQr: false)
             : null,
         onReturn: _selectedModule == _EntregaModule.enZona
             ? () => _openReturn(guide, isQr: false)
@@ -317,7 +316,26 @@ class _EntregasPageState extends State<EntregasPage> {
     await _run(() => _controller.searchGuide(result));
   }
 
-  Future<void> _openDelivery(EntregaGuide guide, {required bool isQr}) async {
+  Future<void> _openMultientrega() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => MultientregaPage(
+          appInformation: widget.appInformation,
+          apiConfig: widget.apiConfig,
+          offline: widget.offline,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _controller.refreshInZone();
+  }
+
+  Future<bool> _showDeliverySheet(
+    BuildContext context,
+    EntregaGuide guide, {
+    required bool isQr,
+    int paymentMethodId = PagoMethodIds.cash,
+  }) async {
     final completed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -327,8 +345,50 @@ class _EntregasPageState extends State<EntregasPage> {
           controller: _controller,
           guide: guide,
           isQr: isQr,
+          paymentMethodId: paymentMethodId,
         );
       },
+    );
+    return completed == true;
+  }
+
+  Future<bool> _showReturnSheet(
+    BuildContext context,
+    EntregaGuide guide, {
+    required bool isQr,
+  }) async {
+    if (_controller.returnReasons.isEmpty) {
+      await _run(_controller.loadReturnReasons);
+    }
+    if (!context.mounted) return false;
+    final completed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) {
+        return _ReturnSheet(controller: _controller, guide: guide, isQr: isQr);
+      },
+    );
+    return completed == true;
+  }
+
+  Future<void> _openGuideExplorer(
+    EntregaGuide guide, {
+    required bool isQr,
+  }) async {
+    final completed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => _EntregaExplorerPage(
+          guide: guide,
+          onDeliver: (context, paymentMethodId) => _showDeliverySheet(
+            context,
+            guide,
+            isQr: isQr,
+            paymentMethodId: paymentMethodId,
+          ),
+          onReturn: (context) => _showReturnSheet(context, guide, isQr: isQr),
+        ),
+      ),
     );
     if (completed == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -341,19 +401,8 @@ class _EntregasPageState extends State<EntregasPage> {
   }
 
   Future<void> _openReturn(EntregaGuide guide, {required bool isQr}) async {
-    if (_controller.returnReasons.isEmpty) {
-      await _run(_controller.loadReturnReasons);
-    }
-    if (!mounted) return;
-    final completed = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (context) {
-        return _ReturnSheet(controller: _controller, guide: guide, isQr: isQr);
-      },
-    );
-    if (completed == true && mounted) {
+    final completed = await _showReturnSheet(context, guide, isQr: isQr);
+    if (completed && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Devolucion ${guide.guideNumber} guardada.'),
@@ -363,6 +412,1039 @@ class _EntregasPageState extends State<EntregasPage> {
     }
   }
 }
+
+class _EntregaExplorerPage extends StatefulWidget {
+  const _EntregaExplorerPage({
+    required this.guide,
+    required this.onDeliver,
+    required this.onReturn,
+  });
+
+  final EntregaGuide guide;
+  final Future<bool> Function(BuildContext context, int paymentMethodId)
+  onDeliver;
+  final Future<bool> Function(BuildContext context) onReturn;
+
+  @override
+  State<_EntregaExplorerPage> createState() => _EntregaExplorerPageState();
+}
+
+class _EntregaExplorerPageState extends State<_EntregaExplorerPage> {
+  late int _selectedTab;
+  int _selectedPaymentMethodId = PagoMethodIds.cash;
+  bool _processing = false;
+
+  bool get _hasChanges => _changesFor(widget.guide).isNotEmpty;
+  bool get _returnToSender => _hasReturnToSenderChange(widget.guide);
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTab = _hasChanges ? 1 : 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final guide = widget.guide;
+    final valueToCollect = guide.valueToCollect;
+    final contentVerification = _rawBool(guide.raw, 'VerificacionContenido');
+
+    return Scaffold(
+      backgroundColor: AppColors.white,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _ExplorerHeader(onBack: () => Navigator.of(context).pop()),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Guía No. ${guide.guideNumber}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.black,
+                      fontFamily: 'Montserrat',
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (_hasChanges) ...[
+                    const SizedBox(height: 12),
+                    const _ExplorerNotice(
+                      icon: Icons.info_outline,
+                      color: AppColors.accent,
+                      text:
+                          'Si no es posible entregar el envío, haz la devolución con el motivo: “Cambio de domicilio”.',
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  _ExplorerQuickActions(
+                    disabled: _returnToSender,
+                    onCall: _launchCall,
+                    onWhatsapp: _launchWhatsapp,
+                    onMap: _launchMap,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Valor a Cobrar:',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _returnToSender
+                          ? AppColors.gray500
+                          : AppColors.black,
+                      fontFamily: 'Montserrat',
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatCurrency(valueToCollect),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _returnToSender
+                          ? AppColors.gray500
+                          : AppColors.black,
+                      fontFamily: 'Montserrat',
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (valueToCollect == 0) ...[
+                    const SizedBox(height: 16),
+                    const _GuidePaidCard(),
+                  ],
+                  if (contentVerification) ...[
+                    const SizedBox(height: 18),
+                    const _CheckContentRow(),
+                    const SizedBox(height: 12),
+                    const _ExplorerNotice(
+                      icon: Icons.warning_amber_rounded,
+                      color: AppColors.accent,
+                      text:
+                          'El destinatario podrá verificar el contenido del paquete antes de realizar el pago.',
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  _PaymentSelector(
+                    enabled: valueToCollect > 0,
+                    selectedPaymentMethodId: _selectedPaymentMethodId,
+                    onChanged: (value) =>
+                        setState(() => _selectedPaymentMethodId = value),
+                  ),
+                  const SizedBox(height: 18),
+                  _ExplorerTabsCard(
+                    guide: guide,
+                    selectedTab: _selectedTab,
+                    onTabChanged: (value) =>
+                        setState(() => _selectedTab = value),
+                  ),
+                  const SizedBox(height: 20),
+                  _ExplorerPrimaryAction(
+                    label: _processing ? 'Procesando' : 'Entregar',
+                    filled: true,
+                    enabled: !_returnToSender && !_processing,
+                    onTap: () => _runDeliverAction(widget.onDeliver),
+                  ),
+                  const SizedBox(height: 14),
+                  _ExplorerPrimaryAction(
+                    label: 'Devolución',
+                    filled: false,
+                    enabled: !_processing,
+                    onTap: () => _runAction(widget.onReturn),
+                  ),
+                ],
+              ),
+            ),
+            if (_processing)
+              const Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runAction(
+    Future<bool> Function(BuildContext context) action,
+  ) async {
+    setState(() => _processing = true);
+    try {
+      final completed = await action(context);
+      if (completed && mounted) Navigator.of(context).pop(true);
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+  }
+
+  Future<void> _runDeliverAction(
+    Future<bool> Function(BuildContext context, int paymentMethodId) action,
+  ) async {
+    setState(() => _processing = true);
+    try {
+      final completed = await action(context, _selectedPaymentMethodId);
+      if (completed && mounted) Navigator.of(context).pop(true);
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+  }
+
+  Future<void> _launchCall() async {
+    final phone = _cleanPhone(widget.guide.phone);
+    if (phone.isEmpty) {
+      _showMessage('Número de teléfono inválido.');
+      return;
+    }
+    await _launchExternal(
+      Uri(scheme: 'tel', path: phone),
+      'No fue posible llamar.',
+    );
+  }
+
+  Future<void> _launchWhatsapp() async {
+    final phone = _whatsappPhone(widget.guide.phone);
+    if (phone.isEmpty) {
+      _showMessage('Número de WhatsApp inválido.');
+      return;
+    }
+    final message = widget.guide.valueToCollect > 0
+        ? 'Hola, somos Inter Rapidísimo. Vamos en camino para entregar tu envío ${widget.guide.guideNumber}. Valor a cobrar ${_formatCurrency(widget.guide.valueToCollect)}.'
+        : 'Hola, somos Inter Rapidísimo. Vamos en camino para entregar tu envío ${widget.guide.guideNumber}.';
+    await _launchExternal(
+      Uri.parse('https://wa.me/$phone?text=${Uri.encodeComponent(message)}'),
+      'No se encontró WhatsApp.',
+    );
+  }
+
+  Future<void> _launchMap() async {
+    final latitude = widget.guide.latitude.trim();
+    final longitude = widget.guide.longitude.trim();
+    if (latitude.isEmpty || longitude.isEmpty) {
+      _showMessage('La guía no tiene coordenadas disponibles.');
+      return;
+    }
+    await _launchExternal(
+      Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude',
+      ),
+      'No fue posible abrir el mapa.',
+    );
+  }
+
+  Future<void> _launchExternal(Uri uri, String fallback) async {
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!launched) _showMessage(fallback);
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+}
+
+class _ExplorerHeader extends StatelessWidget {
+  const _ExplorerHeader({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            left: -12,
+            child: IconButton(
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back, color: AppColors.black),
+              tooltip: 'Atras',
+            ),
+          ),
+          const Text(
+            'Entregar',
+            style: TextStyle(
+              color: AppColors.black,
+              fontFamily: 'Montserrat',
+              fontSize: 25,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExplorerQuickActions extends StatelessWidget {
+  const _ExplorerQuickActions({
+    required this.disabled,
+    required this.onCall,
+    required this.onWhatsapp,
+    required this.onMap,
+  });
+
+  final bool disabled;
+  final VoidCallback onCall;
+  final VoidCallback onWhatsapp;
+  final VoidCallback onMap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _ExplorerActionTile(
+            icon: Icons.call_outlined,
+            label: 'Llamar',
+            disabled: disabled,
+            onTap: onCall,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _ExplorerActionTile(
+            icon: Icons.chat_bubble_outline,
+            label: 'Whatsapp',
+            disabled: disabled,
+            onTap: onWhatsapp,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _ExplorerActionTile(
+            icon: Icons.map_outlined,
+            label: 'Mapa',
+            disabled: disabled,
+            onTap: onMap,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ExplorerActionTile extends StatelessWidget {
+  const _ExplorerActionTile({
+    required this.icon,
+    required this.label,
+    required this.disabled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = disabled ? AppColors.gray500 : AppColors.black;
+    return Material(
+      color: AppColors.white,
+      elevation: 4,
+      shadowColor: AppColors.black.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: disabled ? null : onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          height: 80,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 28, color: color),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: color,
+                  fontFamily: 'Montserrat',
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExplorerNotice extends StatelessWidget {
+  const _ExplorerNotice({
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GuidePaidCard extends StatelessWidget {
+  const _GuidePaidCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF4F8F4),
+      elevation: 2,
+      borderRadius: BorderRadius.circular(8),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.card_giftcard, color: AppColors.green, size: 34),
+            SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                'Esta guía ya está paga',
+                style: TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CheckContentRow extends StatelessWidget {
+  const _CheckContentRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'Verificar contenido',
+          style: TextStyle(
+            color: AppColors.black,
+            fontFamily: 'Montserrat',
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        SizedBox(width: 8),
+        Icon(Icons.inventory_2_outlined, color: AppColors.black),
+      ],
+    );
+  }
+}
+
+class _PaymentSelector extends StatelessWidget {
+  const _PaymentSelector({
+    required this.enabled,
+    required this.selectedPaymentMethodId,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final int selectedPaymentMethodId;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = enabled
+        ? PagoMethodIds.nameFor(selectedPaymentMethodId)
+        : 'Pago confirmado';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: enabled ? AppColors.white : AppColors.gray100,
+        border: Border.all(color: AppColors.gray300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
+          children: [
+            Icon(
+              enabled ? Icons.payments_outlined : Icons.check_circle_outline,
+              color: AppColors.black,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            PopupMenuButton<int>(
+              enabled: enabled,
+              tooltip: 'Metodo de pago',
+              onSelected: onChanged,
+              itemBuilder: (context) => [
+                for (final method in PagoMethodIds.chargeable)
+                  PopupMenuItem<int>(
+                    value: method,
+                    child: Text(PagoMethodIds.nameFor(method)),
+                  ),
+              ],
+              child: const Icon(
+                Icons.keyboard_arrow_down,
+                color: AppColors.black,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExplorerTabsCard extends StatelessWidget {
+  const _ExplorerTabsCard({
+    required this.guide,
+    required this.selectedTab,
+    required this.onTabChanged,
+  });
+
+  final EntregaGuide guide;
+  final int selectedTab;
+  final ValueChanged<int> onTabChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final changes = _changesFor(guide);
+    final returnToSender = _hasReturnToSenderChange(guide);
+    final accent = selectedTab == 1
+        ? returnToSender
+              ? AppColors.red
+              : const Color(0xFFF2A900)
+        : AppColors.black;
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _ExplorerTabButton(
+                label: 'Datos destinatario',
+                selected: selectedTab == 0,
+                onTap: () => onTabChanged(0),
+              ),
+            ),
+            Expanded(
+              child: _ExplorerTabButton(
+                label: 'Cambios',
+                selected: selectedTab == 1,
+                badge: changes.length,
+                disabled: changes.isEmpty,
+                danger: returnToSender,
+                onTap: () => onTabChanged(1),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: selectedTab == 1 && changes.isNotEmpty && !returnToSender
+                ? const Color(0xFFFFF8E1)
+                : AppColors.white,
+            border: Border.all(color: accent, width: 1.5),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: selectedTab == 0
+                  ? _GuideDataPanel(guide: guide)
+                  : _ChangesPanel(changes: changes),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ExplorerTabButton extends StatelessWidget {
+  const _ExplorerTabButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.badge = 0,
+    this.disabled = false,
+    this.danger = false,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final int badge;
+  final bool disabled;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = disabled
+        ? AppColors.gray500
+        : selected
+        ? AppColors.black
+        : AppColors.gray700;
+    return InkWell(
+      onTap: disabled ? null : onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontFamily: 'Montserrat',
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (badge > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    constraints: const BoxConstraints(minWidth: 18),
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    decoration: BoxDecoration(
+                      color: danger ? AppColors.red : const Color(0xFFF2A900),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Text(
+                      '$badge',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 4,
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.black : Colors.transparent,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GuideDataPanel extends StatelessWidget {
+  const _GuideDataPanel({required this.guide});
+
+  final EntregaGuide guide;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _NativeLabelValue(label: 'Número guía', value: guide.guideNumber),
+        const SizedBox(height: 8),
+        _NativeLabelValue(label: 'Nombre cliente', value: guide.recipientName),
+        const SizedBox(height: 8),
+        _NativeLabelValue(label: 'Dirección', value: guide.recipientAddress),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _NativeLabelValue(
+                label: 'Peso',
+                value: '${guide.weight} Kg',
+                compact: true,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _NativeLabelValue(
+                label: 'Celular',
+                value: guide.phone,
+                compact: true,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _NativeLabelValue(
+          label: 'Tipo servicio',
+          value: guide.serviceName.isEmpty
+              ? 'Tipo servicio'
+              : guide.serviceName,
+        ),
+      ],
+    );
+  }
+}
+
+class _ChangesPanel extends StatelessWidget {
+  const _ChangesPanel({required this.changes});
+
+  final List<_ExplorerChange> changes;
+
+  @override
+  Widget build(BuildContext context) {
+    if (changes.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 26),
+          child: Text(
+            'Sin cambios registrados',
+            style: TextStyle(
+              color: AppColors.gray700,
+              fontFamily: 'Montserrat',
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < changes.length; index++) ...[
+          _ChangeTile(change: changes[index]),
+          if (index != changes.length - 1)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Divider(height: 1, color: AppColors.gray300),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ChangeTile extends StatelessWidget {
+  const _ChangeTile({required this.change});
+
+  final _ExplorerChange change;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          change.danger ? Icons.assignment_return_outlined : Icons.sync_alt,
+          color: change.danger ? AppColors.red : AppColors.black,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                change.title,
+                style: TextStyle(
+                  color: change.danger ? AppColors.red : AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (change.description.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  change.description,
+                  style: const TextStyle(
+                    color: AppColors.black,
+                    fontFamily: 'Montserrat',
+                    fontSize: 13,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+              if (change.dateText.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Fecha del cambio: ${change.dateText}',
+                  style: const TextStyle(
+                    color: AppColors.gray700,
+                    fontFamily: 'Montserrat',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ExplorerPrimaryAction extends StatelessWidget {
+  const _ExplorerPrimaryAction({
+    required this.label,
+    required this.filled,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool filled;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = filled ? AppColors.black : AppColors.white;
+    final foreground = filled ? AppColors.white : AppColors.black;
+    return Material(
+      color: enabled ? background : AppColors.gray200,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 54,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: filled ? null : Border.all(color: AppColors.black),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: enabled ? foreground : AppColors.gray500,
+              fontFamily: 'Montserrat',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ExplorerChange {
+  const _ExplorerChange({
+    required this.title,
+    required this.description,
+    required this.dateText,
+    this.danger = false,
+  });
+
+  final String title;
+  final String description;
+  final String dateText;
+  final bool danger;
+}
+
+List<_ExplorerChange> _changesFor(EntregaGuide guide) {
+  final changes = _rawMap(guide.raw['Cambios']);
+  final items = <_ExplorerChange>[];
+
+  void addChange(
+    String key,
+    String title,
+    String Function(Map<String, dynamic> value) description, {
+    bool danger = false,
+  }) {
+    final value = _rawMap(changes[key]);
+    if (value.isEmpty) return;
+    items.add(
+      _ExplorerChange(
+        title: title,
+        description: description(value),
+        dateText: _formatChangeDate(_rawString(value, 'Datetime')),
+        danger: danger,
+      ),
+    );
+  }
+
+  addChange(
+    'CambioDireccion',
+    'Cambio de dirección',
+    (value) => _rawString(value, 'Direccion'),
+  );
+  addChange('CambioAutorizaVecino', 'Autorización vecino', (value) {
+    final name = _rawString(value, 'Nombre');
+    final location = _rawString(value, 'Ubicacion');
+    return [name, location].where((item) => item.isNotEmpty).join(' - ');
+  });
+  addChange('CambioDestinatario', 'Cambio destinatario', (value) {
+    final name = _rawString(value, 'Nombre');
+    final address = _rawString(value, 'Direccion');
+    final phone = _rawString(value, 'TelefonoDestinatario');
+    return [name, address, phone].where((item) => item.isNotEmpty).join(' - ');
+  });
+  addChange(
+    'CambioDevolverARemitente',
+    'Devolver al remitente',
+    (_) => 'El último cambio solicita devolver el envío al remitente.',
+    danger: true,
+  );
+  addChange(
+    'UltimaDireccionLogisticaInversa',
+    'Última dirección logística inversa',
+    (value) => _rawString(value, 'UltimaDireccion'),
+  );
+  addChange('AutorizaTerceroRO', 'Autoriza tercero RO', (value) {
+    final name = _rawString(value, 'NombreTercero');
+    final document = _rawString(
+      value,
+      'IdentificacionTercero',
+    ).replaceAll('Numero de Identificacion:', '').trim();
+    return [name, document].where((item) => item.isNotEmpty).join(' - ');
+  });
+  addChange(
+    'CambioReclamoEnOficina',
+    'Solicitud reclamo en oficina',
+    (value) => _rawString(value, 'NombreCentroServicios'),
+  );
+  addChange(
+    'CambioPagoAnticipado',
+    'Cambio pago anticipado',
+    (_) => 'El destinatario registró una solicitud de pago anticipado.',
+  );
+
+  final telemercadeo = _rawMap(guide.raw['Telemercadeo']);
+  if (telemercadeo.isNotEmpty) {
+    items.add(
+      _ExplorerChange(
+        title: 'Telemercadeo',
+        description: _rawString(telemercadeo, 'NuevaDireccionTelemercadeo'),
+        dateText: _formatChangeDate(_rawString(telemercadeo, 'Datetime')),
+      ),
+    );
+  }
+
+  return items;
+}
+
+bool _hasReturnToSenderChange(EntregaGuide guide) {
+  return _rawMap(
+    _rawMap(guide.raw['Cambios'])['CambioDevolverARemitente'],
+  ).isNotEmpty;
+}
+
+Map<String, dynamic> _rawMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    return value.map((key, child) => MapEntry(key.toString(), child));
+  }
+  return const {};
+}
+
+String _rawString(Map<String, dynamic> json, String key) {
+  return (json[key] ?? '').toString().trim();
+}
+
+bool _rawBool(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  final text = (value ?? '').toString().trim().toLowerCase();
+  return text == 'true' || text == '1' || text == 'si';
+}
+
+String _cleanPhone(String value) {
+  return value.replaceAll(RegExp(r'[^0-9]'), '');
+}
+
+String _whatsappPhone(String value) {
+  final phone = _cleanPhone(value);
+  if (phone.length == 10 && phone.startsWith('3')) return '57$phone';
+  return phone;
+}
+
+String _formatCurrency(num value) {
+  final rounded = value.round().abs().toString();
+  final buffer = StringBuffer();
+  for (var i = 0; i < rounded.length; i++) {
+    final remaining = rounded.length - i;
+    buffer.write(rounded[i]);
+    if (remaining > 1 && remaining % 3 == 1) buffer.write('.');
+  }
+  return '\$ ${value < 0 ? '-' : ''}${buffer.toString()}';
+}
+
+String _formatChangeDate(String value) {
+  if (value.isEmpty) return '';
+  try {
+    final date = DateTime.parse(value.replaceFirst(' ', 'T'));
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$day/$month/$year $hour:$minute';
+  } catch (_) {
+    return value;
+  }
+}
+
 class _EntregasBanner extends StatefulWidget {
   const _EntregasBanner({required this.controller});
 
@@ -388,16 +1470,21 @@ class _EntregasBannerState extends State<_EntregasBanner> {
   void didUpdateWidget(covariant _EntregasBanner oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    final oldText = oldWidget.controller.errorMessage ?? oldWidget.controller.statusMessage;
-    final currentText = widget.controller.errorMessage ?? widget.controller.statusMessage;
+    final oldText =
+        oldWidget.controller.errorMessage ?? oldWidget.controller.statusMessage;
+    final currentText =
+        widget.controller.errorMessage ?? widget.controller.statusMessage;
 
-    final textChanged = oldText != currentText || oldWidget.controller.syncing != widget.controller.syncing;
-    
-    final isNewTrigger = widget.controller.syncing == false && currentText.trim().isNotEmpty;
+    final textChanged =
+        oldText != currentText ||
+        oldWidget.controller.syncing != widget.controller.syncing;
+
+    final isNewTrigger =
+        widget.controller.syncing == false && currentText.trim().isNotEmpty;
 
     if (textChanged || isNewTrigger) {
       setState(() {
-        _timeExpired = false; 
+        _timeExpired = false;
       });
       _startTimerIfNeeded();
     }
@@ -406,7 +1493,8 @@ class _EntregasBannerState extends State<_EntregasBanner> {
   void _startTimerIfNeeded() {
     _visibilityTimer?.cancel();
 
-    final text = widget.controller.errorMessage ?? widget.controller.statusMessage;
+    final text =
+        widget.controller.errorMessage ?? widget.controller.statusMessage;
     if (!widget.controller.syncing && text.trim().isNotEmpty) {
       _visibilityTimer = Timer(_durationVisible, () {
         if (mounted) {
@@ -417,9 +1505,9 @@ class _EntregasBannerState extends State<_EntregasBanner> {
       });
     }
   }
-  
+
   void _ocultarManualmente() {
-    _visibilityTimer?.cancel(); 
+    _visibilityTimer?.cancel();
     setState(() {
       _timeExpired = true;
     });
@@ -433,7 +1521,8 @@ class _EntregasBannerState extends State<_EntregasBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final text = widget.controller.errorMessage ?? widget.controller.statusMessage;
+    final text =
+        widget.controller.errorMessage ?? widget.controller.statusMessage;
 
     if (text.trim().isEmpty && !widget.controller.syncing) {
       return const SizedBox.shrink();
@@ -499,7 +1588,6 @@ class _EntregasBannerState extends State<_EntregasBanner> {
       ),
     );
   }
-
 }
 
 class _EntregasNativeHeader extends StatelessWidget {
@@ -1016,12 +2104,14 @@ class _GuideSummary extends StatelessWidget {
   const _GuideSummary({
     required this.guide,
     required this.style,
+    this.onOpen,
     this.onDeliver,
     this.onReturn,
   });
 
   final EntregaGuide guide;
   final _GuideSummaryStyle style;
+  final VoidCallback? onOpen;
   final VoidCallback? onDeliver;
   final VoidCallback? onReturn;
 
@@ -1042,115 +2132,118 @@ class _GuideSummary extends StatelessWidget {
         shadowColor: AppColors.gray700.withValues(alpha: 0.24),
         borderRadius: BorderRadius.circular(8),
         clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(15, 18, 15, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 125,
-                    child: Text(
-                      guide.guideNumber,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.black,
+        child: InkWell(
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(15, 18, 15, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 125,
+                      child: Text(
+                        guide.guideNumber,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.black,
+                          fontFamily: 'Montserrat',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const Spacer(),
+                    const Text(
+                      'peso',
+                      style: TextStyle(
+                        color: AppColors.gray500,
                         fontFamily: 'Montserrat',
-                        fontSize: 14,
+                        fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                  const Spacer(),
-                  const Text(
-                    'peso',
-                    style: TextStyle(
-                      color: AppColors.gray500,
-                      fontFamily: 'Montserrat',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(width: 5),
+                    Text(
+                      '${guide.weight.toStringAsFixed(guide.weight.truncateToDouble() == guide.weight ? 0 : 1)}Kg',
+                      style: const TextStyle(
+                        color: AppColors.black,
+                        fontFamily: 'Montserrat',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    '${guide.weight.toStringAsFixed(guide.weight.truncateToDouble() == guide.weight ? 0 : 1)}Kg',
-                    style: const TextStyle(
-                      color: AppColors.black,
-                      fontFamily: 'Montserrat',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _RouteNumberBadge(value: guide.planSheet),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(
-                guide.recipientAddress.trim().isEmpty
-                    ? 'Direccion no disponible'
-                    : guide.recipientAddress,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.black,
-                  fontFamily: 'Montserrat',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+                    const SizedBox(width: 8),
+                    _RouteNumberBadge(value: guide.planSheet),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'A Cobrar',
-                          style: TextStyle(
-                            color: AppColors.gray500,
-                            fontFamily: 'Montserrat',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          _formatMoney(guide.valueToCollect),
-                          style: const TextStyle(
-                            color: AppColors.black,
-                            fontFamily: 'Montserrat',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
+                const SizedBox(height: 20),
+                Text(
+                  guide.recipientAddress.trim().isEmpty
+                      ? 'Direccion no disponible'
+                      : guide.recipientAddress,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.black,
+                    fontFamily: 'Montserrat',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
                   ),
-                  if (onDeliver != null || onReturn != null)
-                    Wrap(
-                      spacing: 5,
-                      children: [
-                        _NativeSmallButton(
-                          label: 'Entregar',
-                          filled: true,
-                          onTap: onDeliver,
-                        ),
-                        _NativeSmallButton(
-                          label: 'Devolver',
-                          filled: false,
-                          onTap: onReturn,
-                        ),
-                      ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'A Cobrar',
+                            style: TextStyle(
+                              color: AppColors.gray500,
+                              fontFamily: 'Montserrat',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            _formatMoney(guide.valueToCollect),
+                            style: const TextStyle(
+                              color: AppColors.black,
+                              fontFamily: 'Montserrat',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                ],
-              ),
-            ],
+                    if (onDeliver != null || onReturn != null)
+                      Wrap(
+                        spacing: 5,
+                        children: [
+                          _NativeSmallButton(
+                            label: 'Entregar',
+                            filled: true,
+                            onTap: onDeliver,
+                          ),
+                          _NativeSmallButton(
+                            label: 'Devolver',
+                            filled: false,
+                            onTap: onReturn,
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1442,11 +2535,13 @@ class _DeliverySheet extends StatefulWidget {
     required this.controller,
     required this.guide,
     required this.isQr,
+    required this.paymentMethodId,
   });
 
   final EntregasController controller;
   final EntregaGuide guide;
   final bool isQr;
+  final int paymentMethodId;
 
   @override
   State<_DeliverySheet> createState() => _DeliverySheetState();
@@ -1481,57 +2576,83 @@ class _DeliverySheetState extends State<_DeliverySheet> {
   @override
   Widget build(BuildContext context) {
     return _SheetScaffold(
-      title: 'Entrega Correcta',
-      dark: true,
+      title: 'ENTREGAS',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _DeliveryGuideHeader(guide: widget.guide),
-          const SizedBox(height: 16),
+          if (widget.guide.valueToCollect > 0) ...[
+            const SizedBox(height: 12),
+            _DeliveryPaymentNotice(
+              methodId: widget.paymentMethodId,
+              valueToCollect: widget.guide.valueToCollect,
+            ),
+          ],
+          const SizedBox(height: 18),
           TextField(
             controller: _nameController,
-            decoration: _darkInputDecoration('Recibido por', Icons.person),
-            style: _darkInputStyle,
+            decoration: _lightInputDecoration(
+              'Nombre de quien recibe',
+              Icons.person,
+            ),
             textCapitalization: TextCapitalization.words,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           TextField(
             controller: _documentController,
-            decoration: _darkInputDecoration('No. Identificacion', Icons.badge),
-            style: _darkInputStyle,
+            decoration: _lightInputDecoration('Documento', Icons.badge),
             keyboardType: TextInputType.number,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           TextField(
             controller: _phoneController,
-            decoration: _darkInputDecoration('Telefono', Icons.phone),
-            style: _darkInputStyle,
+            decoration: _lightInputDecoration('Teléfono', Icons.phone),
             keyboardType: TextInputType.phone,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           TextField(
             controller: _observationController,
-            decoration: _darkInputDecoration('Observaciones', Icons.notes),
-            style: _darkInputStyle,
+            decoration: _lightInputDecoration(
+              'Observaciones (Opcional)',
+              Icons.notes,
+            ),
             maxLines: 2,
           ),
+          const SizedBox(height: 16),
+          const _SignatureWarning(),
           const SizedBox(height: 14),
-          _SectionLabel(icon: Icons.draw_outlined, label: 'Firma'),
+          const _LightSectionLabel(
+            icon: Icons.draw_outlined,
+            label: 'Firma recibido',
+          ),
           const SizedBox(height: 8),
           _SignaturePad(key: _signatureKey),
           const SizedBox(height: 14),
-          _SectionLabel(
+          const _LightSectionLabel(
             icon: Icons.photo_camera_outlined,
             label: 'Foto paquete',
           ),
           const SizedBox(height: 8),
           _photoCapture(),
           const SizedBox(height: 16),
-          _NativeSheetButton(
-            onPressed: _saving ? null : _submit,
-            icon: const Icon(Icons.save_outlined),
-            label: _saving ? 'Guardando' : 'Guardar',
-            inverted: true,
+          Row(
+            children: [
+              Expanded(
+                child: _NativeSheetButton(
+                  onPressed: _takePhoto,
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: _photoBase64.trim().isEmpty ? 'Foto' : 'Repetir',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _NativeSheetButton(
+                  onPressed: _saving ? null : _submit,
+                  icon: const Icon(Icons.save_outlined),
+                  label: _saving ? 'Guardando' : 'Guardar',
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1542,29 +2663,30 @@ class _DeliverySheetState extends State<_DeliverySheet> {
     final bytes = _photoBytes();
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xAA000000),
-        border: Border.all(color: const Color(0xAAFFFFFF), width: 1.5),
+        color: AppColors.gray100,
+        border: Border.all(color: AppColors.gray300, width: 1.2),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Padding(
         padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (bytes != null)
-              ClipRRect(
+        child: bytes == null
+            ? const SizedBox(
+                height: 112,
+                child: Center(
+                  child: Text(
+                    'Sin foto de entrega',
+                    style: TextStyle(
+                      color: AppColors.gray700,
+                      fontFamily: 'Montserrat',
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              )
+            : ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: Image.memory(bytes, height: 150, fit: BoxFit.cover),
               ),
-            const SizedBox(height: 8),
-            _NativeSheetButton(
-              onPressed: _takePhoto,
-              icon: const Icon(Icons.photo_camera),
-              label: bytes == null ? 'Captura Guia' : 'Repetir Foto',
-              inverted: true,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1627,6 +2749,7 @@ class _DeliverySheetState extends State<_DeliverySheet> {
         signatureBase64: signature,
         photoBase64: _photoBase64,
         isQr: widget.isQr,
+        paymentMethodId: widget.paymentMethodId,
       );
       if (mounted) Navigator.of(context).pop(true);
     } on Object catch (error) {
@@ -1685,37 +2808,27 @@ class _DeliverySheetState extends State<_DeliverySheet> {
         .trim();
   }
 
-  TextStyle get _darkInputStyle {
-    return const TextStyle(
-      color: AppColors.white,
-      fontFamily: 'Montserrat',
-      fontSize: 18,
-      fontWeight: FontWeight.w700,
-    );
-  }
-
-  InputDecoration _darkInputDecoration(String label, IconData icon) {
+  InputDecoration _lightInputDecoration(String label, IconData icon) {
     final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(10),
-      borderSide: const BorderSide(color: Color(0xAAFFFFFF), width: 1.5),
+      borderRadius: BorderRadius.circular(8),
+      borderSide: const BorderSide(color: AppColors.gray500, width: 1.2),
     );
     return InputDecoration(
       hintText: label,
-      prefixIcon: Icon(icon, color: const Color(0xAAFFFFFF)),
+      prefixIcon: Icon(icon, color: AppColors.black),
       hintStyle: const TextStyle(
-        color: Color(0xAA9E9E9E),
+        color: AppColors.gray500,
         fontFamily: 'Montserrat',
-        fontSize: 18,
-        fontStyle: FontStyle.italic,
-        fontWeight: FontWeight.w700,
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
       ),
       filled: true,
-      fillColor: const Color(0xAA000000),
+      fillColor: AppColors.white,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       enabledBorder: border,
       focusedBorder: border.copyWith(
-        borderSide: const BorderSide(color: AppColors.white, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.black, width: 1.5),
       ),
     );
   }
@@ -1870,21 +2983,21 @@ class _DeliveryGuideHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
-          'Entrega Correcta',
+          'Generar firma',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: AppColors.white,
+            color: AppColors.accent,
             fontFamily: 'Montserrat',
             fontSize: 20,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(height: 6),
         const Text(
-          'Nro. Guia',
+          'Nro. Guía',
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: AppColors.white,
+            color: AppColors.black,
             fontFamily: 'Montserrat',
             fontSize: 21,
             fontWeight: FontWeight.w700,
@@ -1894,7 +3007,7 @@ class _DeliveryGuideHeader extends StatelessWidget {
           guide.guideNumber,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            color: AppColors.white,
+            color: AppColors.black,
             fontFamily: 'Montserrat',
             fontSize: 21,
             fontWeight: FontWeight.w700,
@@ -1908,13 +3021,56 @@ class _DeliveryGuideHeader extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: AppColors.white,
+            color: AppColors.accent,
             fontFamily: 'Montserrat',
-            fontSize: 21,
+            fontSize: 18,
             fontWeight: FontWeight.w700,
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DeliveryPaymentNotice extends StatelessWidget {
+  const _DeliveryPaymentNotice({
+    required this.methodId,
+    required this.valueToCollect,
+  });
+
+  final int methodId;
+  final int valueToCollect;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFF2A900)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.payments_outlined, color: AppColors.black),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Cobro ${PagoMethodIds.nameFor(methodId)} por ${_formatCurrency(valueToCollect)}',
+                style: const TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1949,6 +3105,67 @@ class _ReturnGuideHeader extends StatelessWidget {
               fontSize: 21,
               fontWeight: FontWeight.w700,
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SignatureWarning extends StatelessWidget {
+  const _SignatureWarning();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.gray100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Padding(
+        padding: EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.black, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Es muy importante que se solicite la firma al cliente y que sea válida para el registro de la prueba de entrega.',
+                style: TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  height: 1.3,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LightSectionLabel extends StatelessWidget {
+  const _LightSectionLabel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppColors.black),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.black,
+            fontFamily: 'Montserrat',
+            fontWeight: FontWeight.w800,
           ),
         ),
       ],
@@ -2064,32 +3281,26 @@ class _SignaturePainter extends CustomPainter {
 }
 
 class _SheetScaffold extends StatelessWidget {
-  const _SheetScaffold({
-    required this.title,
-    required this.child,
-    this.dark = false,
-  });
+  const _SheetScaffold({required this.title, required this.child});
 
   final String title;
   final Widget child;
-  final bool dark;
 
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
-    final background = dark ? AppColors.black : AppColors.white;
     return Material(
-      color: background,
+      color: AppColors.white,
       child: Padding(
         padding: EdgeInsets.only(bottom: bottom),
         child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(24, dark ? 10 : 0, 24, 26),
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 26),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _NativeSheetHeader(title: title, dark: dark),
-              SizedBox(height: dark ? 14 : 22),
+              _NativeSheetHeader(title: title),
+              const SizedBox(height: 22),
               child,
             ],
           ),
@@ -2100,73 +3311,37 @@ class _SheetScaffold extends StatelessWidget {
 }
 
 class _NativeSheetHeader extends StatelessWidget {
-  const _NativeSheetHeader({required this.title, required this.dark});
+  const _NativeSheetHeader({required this.title});
 
   final String title;
-  final bool dark;
 
   @override
   Widget build(BuildContext context) {
-    if (!dark) {
-      return SizedBox(
-        height: 56,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.black,
-                fontFamily: 'Montserrat',
-                fontSize: 20,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            Positioned(
-              left: -12,
-              child: IconButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                icon: const Icon(Icons.arrow_back, color: AppColors.black),
-                tooltip: 'Atras',
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-    return Row(
-      children: [
-        IconButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          style: IconButton.styleFrom(backgroundColor: AppColors.black),
-          icon: const Icon(Icons.arrow_back, color: AppColors.white),
-          tooltip: 'Atras',
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
+    return SizedBox(
+      height: 56,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
               color: AppColors.black,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.white),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.white,
-                  fontFamily: 'Montserrat',
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
+              fontFamily: 'Montserrat',
+              fontSize: 20,
+              fontWeight: FontWeight.w500,
             ),
           ),
-        ),
-      ],
+          Positioned(
+            left: -12,
+            child: IconButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              icon: const Icon(Icons.arrow_back, color: AppColors.black),
+              tooltip: 'Atras',
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2176,13 +3351,11 @@ class _NativeSheetButton extends StatelessWidget {
     required this.onPressed,
     required this.icon,
     required this.label,
-    this.inverted = false,
   });
 
   final VoidCallback? onPressed;
   final Widget icon;
   final String label;
-  final bool inverted;
 
   @override
   Widget build(BuildContext context) {
@@ -2193,9 +3366,7 @@ class _NativeSheetButton extends StatelessWidget {
         foregroundColor: AppColors.white,
         disabledBackgroundColor: AppColors.gray500,
         disabledForegroundColor: AppColors.white,
-        side: inverted
-            ? const BorderSide(color: Color(0xAAFFFFFF), width: 1)
-            : BorderSide.none,
+        side: BorderSide.none,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
         textStyle: const TextStyle(
@@ -2233,31 +3404,6 @@ class _EntregasEmptyState extends StatelessWidget {
           Text(message, textAlign: TextAlign.center),
         ],
       ),
-    );
-  }
-}
-
-class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: AppColors.white),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.white,
-            fontFamily: 'Montserrat',
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
     );
   }
 }

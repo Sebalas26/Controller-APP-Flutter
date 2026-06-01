@@ -19,6 +19,10 @@ class ControllerApiConfig {
     required this.auditoriaPesosBaseUrl,
     required this.auditoriaAuthBaseUrl,
     required this.mensajeTextoBaseUrl,
+    required this.mediosPagoLegacyBaseUrl,
+    required this.mediosPagoBaseUrl,
+    required this.mediosPagoAuthBaseUrl,
+    required this.mediosPagoOnPremiseBaseUrl,
   });
 
   final String label;
@@ -40,4 +44,8 @@ class ControllerApiConfig {
   final String auditoriaPesosBaseUrl;
   final String auditoriaAuthBaseUrl;
   final String mensajeTextoBaseUrl;
+  final String mediosPagoLegacyBaseUrl;
+  final String mediosPagoBaseUrl;
+  final String mediosPagoAuthBaseUrl;
+  final String mediosPagoOnPremiseBaseUrl;
 }

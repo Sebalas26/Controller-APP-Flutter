@@ -61,8 +61,8 @@ class MainActivity : FlutterActivity() {
                     Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: ""
                 )
                 "getAesPasswordSecret" -> result.success(BuildConfig.ENCRYPT_AES256_PASSWORD_SECRET)
-                "getAesKeySecret" -> result.success(BuildConfig.ENCRYPT_AES256_KEY_SECRET)
-                "getAesSaltSecret" -> result.success(BuildConfig.ENCRYPT_AES256_SALT_SECRET)
+                "getAesKeySecret" -> result.success(SW50M3JyNHAxZDFzMW0wQ2w0UzMzbmNyMXBjMTBuUHQyMDIy)
+                "getAesSaltSecret" -> result.success(MW5UM3JyNHAxZDFTMU0wXzIwMjI=")
                 "takePackagePhoto" -> takePackagePhoto(result)
                 "scanQrCode" -> scanQrCode(result)
                 "compressImageBase64ToJpeg" -> compressImageBase64ToJpeg(call, result)

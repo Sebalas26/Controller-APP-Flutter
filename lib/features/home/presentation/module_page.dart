@@ -6,6 +6,7 @@ import '../../auditoria_pesos/auditoria_pesos.dart';
 import '../../bloques/bloques.dart';
 import '../../entregas/entregas.dart';
 import '../../recoger/recoger.dart';
+import '../../tarjeta_comercial/tarjeta_comercial.dart';
 import '../../vender/vender.dart';
 import '../../../shared/config/app_environment.dart';
 import '../../../shared/theme/app_colors.dart';
@@ -107,6 +108,18 @@ class ModulePage extends StatelessWidget {
       );
     }
 
+    if (module.id == 'tarjeta') {
+      return Scaffold(
+        body: SafeArea(
+          child: TarjetaComercialPage(
+            appInformation: session.appInformation,
+            apiConfig: config.toApiConfig(),
+            offline: session.offline,
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: Text(module.title)),
       body: SingleChildScrollView(
@@ -155,6 +168,12 @@ class ModulePage extends StatelessWidget {
         );
       case 'anular':
         return AnularGuiaPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        );
+      case 'tarjeta':
+        return TarjetaComercialPage(
           appInformation: session.appInformation,
           apiConfig: config.toApiConfig(),
           offline: session.offline,

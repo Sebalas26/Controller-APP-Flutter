@@ -1,82 +1,84 @@
 import 'package:flutter/material.dart';
 
+import '../../../../shared/theme/app_colors.dart';
 import '../../models/vender_models.dart';
 import '../controllers/vender_flow_controller.dart';
 import '../widgets/vender_form_widgets.dart';
 
+const _surface = Color(0xFFFEFEFE);
+const _border = Color(0xFFE0E0E0);
+const _muted = Color(0xFF727272);
+const _darkMuted = Color(0xFF575757);
+
 class VenderBillingSummaryView extends StatelessWidget {
-  const VenderBillingSummaryView({super.key, required this.controller});
+  const VenderBillingSummaryView({
+    super.key,
+    required this.controller,
+    required this.runAction,
+    required this.onBack,
+  });
 
   final VenderFlowController controller;
+  final Future<void> Function(Future<void> Function()) runAction;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
     final collection = controller.collectionState;
     if (collection == null || collection.guides.isEmpty) {
-      return const VenderEmptyState(
-        icon: Icons.receipt_long_outlined,
-        title: 'Sin guias admitidas',
-        message: 'No hay guias listas para facturar.',
+      return const Scaffold(
+        backgroundColor: _surface,
+        body: SafeArea(
+          child: VenderEmptyState(
+            icon: Icons.receipt_long_outlined,
+            title: 'Sin guias admitidas',
+            message: 'No hay guias listas para facturar.',
+          ),
+        ),
       );
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const VenderSectionTitle(
-          icon: Icons.receipt_long_outlined,
-          title: 'Resumen venta',
-          subtitle: 'Verifica las guias admitidas antes de facturar',
-        ),
-        const SizedBox(height: 16),
-        _TotalsBlock(collection: collection),
-        const SizedBox(height: 16),
-        _PaymentBlock(collection: collection),
-        const SizedBox(height: 16),
-        ...collection.guides.map((guide) => _GuideSummaryTile(guide: guide)),
-      ],
-    );
-  }
-}
 
-class _TotalsBlock extends StatelessWidget {
-  const _TotalsBlock({required this.collection});
-
-  final VenderCollectionState collection;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9F9F9),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1E6EF)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
+    return Scaffold(
+      backgroundColor: _surface,
+      body: SafeArea(
         child: Column(
           children: [
-            _SummaryLine('Total envios', collection.guideCount.toString()),
-            _SummaryLine('Contado', collection.cashGuideCount.toString()),
-            _SummaryLine('Credito', collection.creditGuideCount.toString()),
-            _SummaryLine('Al cobro', collection.collectGuideCount.toString()),
-            _SummaryLine(
-              'Prefactura',
-              collection.idPreInvoice <= 0
-                  ? '-'
-                  : collection.idPreInvoice.toString(),
-            ),
-            const Divider(height: 24),
-            _SummaryLine(
-              'Valor guia contado',
-              _money(collection.totalGuidesValue),
-            ),
-            _SummaryLine('Valor recogida', _money(collection.pickupValue)),
-            _SummaryLine('Empaques', _money(collection.packageValue)),
-            const Divider(height: 24),
-            _SummaryLine(
-              'Total a cobrar',
-              _money(collection.totalToCharge),
-              prominent: true,
+            _SummaryHeader(onBack: onBack),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _CustomerCard(guide: collection.guides.first),
+                    const SizedBox(height: 24),
+                    _ShippingCountCard(collection: collection),
+                    const SizedBox(height: 24),
+                    _LiquidationCard(collection: collection),
+                    const SizedBox(height: 24),
+                    _PaymentMethodField(
+                      collection: collection,
+                      enabled: !controller.busyRemote,
+                      onSelected: controller.selectCollectionPaymentMethod,
+                    ),
+                    if (collection.paymentMessage.trim().isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      _PaymentStatusCard(collection: collection),
+                    ],
+                    const SizedBox(height: 32),
+                    _ContinueButton(
+                      loading: controller.busyRemote,
+                      label:
+                          collection.paymentTransactionId > 0 &&
+                              !collection.confirmed
+                          ? 'Consultar pago'
+                          : 'Continuar',
+                      onPressed: () =>
+                          runAction(controller.invoiceAdmittedGuides),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -85,137 +87,388 @@ class _TotalsBlock extends StatelessWidget {
   }
 }
 
-class _PaymentBlock extends StatelessWidget {
-  const _PaymentBlock({required this.collection});
+class _SummaryHeader extends StatelessWidget {
+  const _SummaryHeader({required this.onBack});
 
-  final VenderCollectionState collection;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        Chip(
-          label: Text(collection.selectedPaymentMethodName),
-          avatar: const Icon(Icons.payments_outlined, size: 18),
-        ),
-        const _UnavailableChip(icon: Icons.phone_android, label: 'Nequi'),
-        const _UnavailableChip(icon: Icons.link, label: 'Link de pago'),
-        const _UnavailableChip(
-          icon: Icons.account_balance_wallet_outlined,
-          label: 'Inter Pay',
-        ),
-      ],
-    );
-  }
-}
-
-class _UnavailableChip extends StatelessWidget {
-  const _UnavailableChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    return Chip(
-      avatar: Icon(icon, size: 18, color: const Color(0xFF696F79)),
-      label: Text('$label no disponible'),
-      backgroundColor: const Color(0xFFF4F5F7),
-      side: const BorderSide(color: Color(0xFFE1E6EF)),
-    );
-  }
-}
-
-class _GuideSummaryTile extends StatelessWidget {
-  const _GuideSummaryTile({required this.guide});
-
-  final VenderCollectionGuide guide;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE1E6EF)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.local_shipping_outlined),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      guide.guideNumber,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    _money(guide.shouldChargeNow ? guide.totalValue : 0),
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                ],
+    return SizedBox(
+      height: 56,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 16, 0),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back, color: AppColors.black),
+              tooltip: 'Atras',
+            ),
+            const Expanded(
+              child: Text(
+                'Resumen de venta',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-              const SizedBox(height: 8),
-              _SummaryLine('Forma pago', guide.paymentMethodLabel),
-              _SummaryLine('Remitente', guide.senderName),
-              _SummaryLine('Documento', guide.senderDocument),
-              _SummaryLine('Telefono', guide.senderPhone),
-              _SummaryLine('Destinatario', guide.recipientName),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _SummaryLine extends StatelessWidget {
-  const _SummaryLine(this.label, this.value, {this.prominent = false});
+class _CustomerCard extends StatelessWidget {
+  const _CustomerCard({required this.guide});
 
-  final String label;
-  final String value;
-  final bool prominent;
+  final VenderCollectionGuide guide;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    return _SummaryCard(
+      title: 'Cliente',
+      rowSpacing: 8,
+      rows: [
+        _SummaryRowData('Identificación:', guide.senderDocument),
+        _SummaryRowData('Celular:', guide.senderPhone),
+        _SummaryRowData('Nombre:', guide.senderName),
+      ],
+    );
+  }
+}
+
+class _ShippingCountCard extends StatelessWidget {
+  const _ShippingCountCard({required this.collection});
+
+  final VenderCollectionState collection;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SummaryCard(
+      title: 'Cantidad de envíos',
+      rows: [
+        _SummaryRowData('Al cobro', collection.collectGuideCount.toString()),
+        _SummaryRowData('Contado:', collection.cashGuideCount.toString()),
+        _SummaryRowData('Crédito:', collection.creditGuideCount.toString()),
+      ],
+    );
+  }
+}
+
+class _LiquidationCard extends StatelessWidget {
+  const _LiquidationCard({required this.collection});
+
+  final VenderCollectionState collection;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SummaryCard(
+      title: 'Liquidación',
+      rows: [
+        _SummaryRowData('Valor recogida:', _money(collection.pickupValue)),
+        _SummaryRowData('Empaque', _money(collection.packageValue)),
+        _SummaryRowData(
+          'Valor guías contado',
+          _money(collection.totalGuidesValue),
+        ),
+        _SummaryRowData(
+          'Total a cobrar',
+          _money(collection.totalToCharge),
+          prominent: true,
+        ),
+      ],
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    required this.title,
+    required this.rows,
+    this.rowSpacing = 4,
+  });
+
+  final String title;
+  final List<_SummaryRowData> rows;
+  final double rowSpacing;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: _darkMuted.withValues(alpha: 0.15),
+            offset: const Offset(-2, 4),
+            blurRadius: 12,
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 24,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontFamily: 'Montserrat',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            for (var index = 0; index < rows.length; index++) ...[
+              if (index > 0 || rowSpacing > 0) SizedBox(height: rowSpacing),
+              _SummaryRow(row: rows[index]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({required this.row});
+
+  final _SummaryRowData row;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 138,
+          Expanded(
             child: Text(
-              label,
+              row.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: const Color(0xFF696F79),
-                fontWeight: prominent ? FontWeight.w900 : FontWeight.w700,
+                color: row.prominent ? AppColors.black : _darkMuted,
+                fontFamily: 'Montserrat',
+                fontSize: 12,
+                fontWeight: row.prominent ? FontWeight.w800 : FontWeight.w400,
               ),
             ),
           ),
+          const SizedBox(width: 16),
           Expanded(
             child: Text(
-              value.trim().isEmpty ? '-' : value,
-              textAlign: TextAlign.end,
+              row.value.trim().isEmpty ? '-' : row.value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: prominent ? 18 : 14,
-                fontWeight: prominent ? FontWeight.w900 : FontWeight.w700,
+                color: AppColors.black,
+                fontFamily: 'Montserrat',
+                fontSize: 12,
+                fontWeight: row.prominent ? FontWeight.w800 : FontWeight.w400,
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SummaryRowData {
+  const _SummaryRowData(this.label, this.value, {this.prominent = false});
+
+  final String label;
+  final String value;
+  final bool prominent;
+}
+
+class _PaymentStatusCard extends StatelessWidget {
+  const _PaymentStatusCard({required this.collection});
+
+  final VenderCollectionState collection;
+
+  @override
+  Widget build(BuildContext context) {
+    final approved = collection.confirmed;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: approved ? const Color(0xFFEFF8F1) : const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: approved ? AppColors.green : const Color(0xFFF2A900),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              approved ? Icons.check_circle_outline : Icons.info_outline,
+              color: AppColors.black,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                collection.paymentMessage,
+                style: const TextStyle(
+                  color: AppColors.black,
+                  fontFamily: 'Montserrat',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PaymentMethodField extends StatelessWidget {
+  const _PaymentMethodField({
+    required this.collection,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  final VenderCollectionState collection;
+  final bool enabled;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final methods = VenderPaymentMethods.chargeable;
+    final selected = methods.contains(collection.selectedPaymentMethodId)
+        ? collection.selectedPaymentMethodId
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Método de pago',
+          style: TextStyle(
+            color: AppColors.black,
+            fontFamily: 'Montserrat',
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 40,
+          child: DropdownButtonFormField<int>(
+            initialValue: selected,
+            isExpanded: true,
+            icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.black),
+            hint: const Text(
+              'Seleccionar',
+              style: TextStyle(
+                color: _muted,
+                fontFamily: 'Montserrat',
+                fontSize: 16,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+            items: [
+              for (final method in methods)
+                DropdownMenuItem<int>(
+                  value: method,
+                  child: Text(VenderPaymentMethods.nameFor(method)),
+                ),
+            ],
+            onChanged: enabled
+                ? (value) {
+                    if (value != null) onSelected(value);
+                  }
+                : null,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: _surface,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 0,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: _border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: _border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: AppColors.black),
+              ),
+            ),
+            style: const TextStyle(
+              color: _muted,
+              fontFamily: 'Montserrat',
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ContinueButton extends StatelessWidget {
+  const _ContinueButton({
+    required this.loading,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final bool loading;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: loading ? AppColors.gray500 : AppColors.black,
+      elevation: 8,
+      shadowColor: _darkMuted.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: loading ? null : onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          height: 40,
+          child: Center(
+            child: Text(
+              loading ? 'Procesando...' : label,
+              style: const TextStyle(
+                color: _surface,
+                fontFamily: 'Montserrat',
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -229,5 +482,5 @@ String _money(double value) {
     buffer.write(normalized[i]);
     if (remaining > 1 && remaining % 3 == 1) buffer.write('.');
   }
-  return '\$ ${buffer.toString()}';
+  return '\$${buffer.toString()}';
 }

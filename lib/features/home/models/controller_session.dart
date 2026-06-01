@@ -22,6 +22,19 @@ class ControllerSession {
   final List<ModuleApp> modules;
   final bool offline;
 
+  ControllerSession copyWith({bool? offline}) {
+    return ControllerSession(
+      username: username,
+      environment: environment,
+      rememberUser: rememberUser,
+      loginDate: loginDate,
+      appInformation: appInformation,
+      syncStatus: syncStatus,
+      modules: modules,
+      offline: offline ?? this.offline,
+    );
+  }
+
   factory ControllerSession.fromAuthenticated(
     AuthenticatedSession session,
     AppEnvironment environment,

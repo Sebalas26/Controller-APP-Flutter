@@ -474,6 +474,8 @@ class VenderCollectionGuide {
     required this.recipientName,
     required this.idPickup,
     required this.idPreInvoice,
+    this.destinationCity = '',
+    this.recipientAddress = '',
   });
 
   final String guideNumber;
@@ -488,6 +490,8 @@ class VenderCollectionGuide {
   final String senderPhone;
   final String senderEmail;
   final String recipientName;
+  final String destinationCity;
+  final String recipientAddress;
   final int idPickup;
   final int idPreInvoice;
 
@@ -595,6 +599,24 @@ class VenderCollectionGuide {
           _readString(recipient, const ['segundoApellido', 'SegundoApellido']),
         ].where((part) => part.trim().isNotEmpty).join(' '),
       ]),
+      destinationCity: _coalesceText([
+        _readString(printPayload, const ['NombreCiudadDestinatario']),
+        _readString(printPayload, const ['CiudadDestino']),
+        _readString(printPayload, const ['NombreCiudadDestino']),
+        _readString(admissionPreenvio, const [
+          'nombreCiudadDestino',
+          'NombreCiudadDestino',
+        ]),
+        _readString(guide, const ['CiudadDestino', 'NombreCiudadDestino']),
+      ]),
+      recipientAddress: _coalesceText([
+        _readString(printPayload, const ['DireccionDestinatario']),
+        _readString(recipient, const [
+          'direccionNormalizada',
+          'DireccionNormalizada',
+        ]),
+        _readString(recipient, const ['direccion', 'Direccion']),
+      ]),
       idPickup: syncResult.idPickup,
       idPreInvoice: syncResult.idPreInvoice,
     );
@@ -609,6 +631,9 @@ class VenderCollectionState {
     this.pickupExecuted = false,
     this.pickupMessage = '',
     this.invoiceNumber = '',
+    this.paymentTransactionId = 0,
+    this.paymentStatus = '',
+    this.paymentMessage = '',
   });
 
   final List<VenderCollectionGuide> guides;
@@ -617,6 +642,9 @@ class VenderCollectionState {
   final bool pickupExecuted;
   final String pickupMessage;
   final String invoiceNumber;
+  final int paymentTransactionId;
+  final String paymentStatus;
+  final String paymentMessage;
 
   int get guideCount => guides.length;
 
@@ -659,6 +687,12 @@ class VenderCollectionState {
     return VenderPaymentMethods.nameFor(selectedPaymentMethodId);
   }
 
+  bool get requiresRemotePayment {
+    return totalToCharge > 0 &&
+        (selectedPaymentMethodId == VenderPaymentMethods.nequi ||
+            selectedPaymentMethodId == VenderPaymentMethods.linkPayment);
+  }
+
   String get actionLabel {
     return switch (selectedPaymentMethodId) {
       VenderPaymentMethods.nequi => 'Continuar Nequi',
@@ -675,6 +709,10 @@ class VenderCollectionState {
     bool? pickupExecuted,
     String? pickupMessage,
     String? invoiceNumber,
+    int? paymentTransactionId,
+    String? paymentStatus,
+    String? paymentMessage,
+    bool clearPaymentTracking = false,
   }) {
     return VenderCollectionState(
       guides: guides ?? this.guides,
@@ -684,6 +722,15 @@ class VenderCollectionState {
       pickupExecuted: pickupExecuted ?? this.pickupExecuted,
       pickupMessage: pickupMessage ?? this.pickupMessage,
       invoiceNumber: invoiceNumber ?? this.invoiceNumber,
+      paymentTransactionId: clearPaymentTracking
+          ? 0
+          : paymentTransactionId ?? this.paymentTransactionId,
+      paymentStatus: clearPaymentTracking
+          ? ''
+          : paymentStatus ?? this.paymentStatus,
+      paymentMessage: clearPaymentTracking
+          ? ''
+          : paymentMessage ?? this.paymentMessage,
     );
   }
 
