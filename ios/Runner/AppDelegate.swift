@@ -41,6 +41,10 @@ import UserNotifications
           result(self?.bundleSecret("ControllerYaapPasswordQa") ?? "")
         case "getYaapPasswordProduccion":
           result(self?.bundleSecret("ControllerYaapPasswordProduccion") ?? "")
+        case "getListaRestrictivaUser":
+          result(self?.bundleSecret("ControllerListaRestrictivaUser") ?? "")
+        case "getListaRestrictivaPassword":
+          result(self?.bundleSecret("ControllerListaRestrictivaPassword") ?? "")
         case "takePackagePhoto":
           self?.takePackagePhoto(result: result)
         case "scanQrCode":

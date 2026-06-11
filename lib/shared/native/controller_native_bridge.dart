@@ -140,6 +140,30 @@ class ControllerNativeBridge {
     }
   }
 
+  Future<String> listaRestrictivaUser() async {
+    try {
+      return await _channel.invokeMethod<String>('getListaRestrictivaUser') ??
+          '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
+
+  Future<String> listaRestrictivaPassword() async {
+    try {
+      return await _channel.invokeMethod<String>(
+            'getListaRestrictivaPassword',
+          ) ??
+          '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    }
+  }
+
   Future<bool> hasBluetoothPrinter() async {
     try {
       return await _channel.invokeMethod<bool>('hasBluetoothPrinter') ?? false;

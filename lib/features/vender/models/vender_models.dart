@@ -270,25 +270,217 @@ class VenderGeoAddress {
   }
 
   factory VenderGeoAddress.fromJson(Map<String, dynamic> json) {
+    final source = json['data'] is Map
+        ? Map<String, dynamic>.from(json['data'] as Map)
+        : json['Data'] is Map
+        ? Map<String, dynamic>.from(json['Data'] as Map)
+        : json;
     return VenderGeoAddress(
-      id: _readString(json, const ['idDireccionGeneral', 'IdDireccionGeneral']),
-      normalizedAddress: _readString(json, const [
+      id: _readString(source, const [
+        'idDireccionGeneral',
+        'IdDireccionGeneral',
+      ]),
+      normalizedAddress: _readString(source, const [
         'direccionNormalizada',
         'DireccionNormalizada',
       ]),
-      address: _readString(json, const ['direccion', 'Direccion']),
-      neighborhood: _readString(json, const ['barrio', 'Barrio']),
-      macroZone: _readString(json, const ['macroZona', 'MacroZona']),
-      microZone: _readString(json, const ['microZona', 'MicroZona']),
-      latitude: _readString(json, const ['latitude', 'Latitude']),
-      longitude: _readString(json, const ['longitude', 'Longitude']),
-      cityId: _readString(json, const ['idCiudad', 'IdCiudad']),
-      localityId: _readString(json, const ['idLocalidad', 'IdLocalidad']),
-      addressType: _readString(json, const ['tipoDireccion', 'TipoDireccion']),
-      wrongAddress: _readBool(json, const [
+      address: _readString(source, const ['direccion', 'Direccion']),
+      neighborhood: _readString(source, const ['barrio', 'Barrio']),
+      macroZone: _readString(source, const [
+        'zona3',
+        'Zona3',
+        'macroZona',
+        'MacroZona',
+      ]),
+      microZone: _readString(source, const [
+        'zona2',
+        'Zona2',
+        'microZona',
+        'MicroZona',
+      ]),
+      latitude: _readString(source, const ['latitude', 'Latitude']),
+      longitude: _readString(source, const ['longitude', 'Longitude']),
+      cityId: _readString(source, const ['idCiudad', 'IdCiudad']),
+      localityId: _readString(source, const ['idLocalidad', 'IdLocalidad']),
+      addressType: _readString(source, const [
+        'tipoDireccion',
+        'TipoDireccion',
+      ]),
+      wrongAddress: _readBool(source, const [
         'direccionErrada',
         'DireccionErrada',
       ]),
+      raw: json,
+    );
+  }
+}
+
+class VenderDifficultAccessCenter {
+  const VenderDifficultAccessCenter({
+    required this.id,
+    required this.name,
+    required this.address,
+    this.raw = const <String, Object?>{},
+  });
+
+  final String id;
+  final String name;
+  final String address;
+  final Map<String, Object?> raw;
+
+  String get displayName => name.trim().isEmpty ? address.trim() : name.trim();
+
+  factory VenderDifficultAccessCenter.fromJson(Map<String, dynamic> json) {
+    return VenderDifficultAccessCenter(
+      id: _readString(json, const ['IdCentroServicio', 'idCentroServicio']),
+      name: _readString(json, const ['NombreCS', 'nombreCS']),
+      address: _readString(json, const ['DireccionPunto', 'direccionPunto']),
+      raw: json,
+    );
+  }
+}
+
+class VenderRestrictiveListDebt {
+  const VenderRestrictiveListDebt({
+    required this.recipient,
+    required this.restrictionDate,
+    required this.guideNumber,
+    required this.value,
+    this.raw = const <String, Object?>{},
+  });
+
+  final String recipient;
+  final String restrictionDate;
+  final String guideNumber;
+  final double value;
+  final Map<String, Object?> raw;
+
+  DateTime? get parsedRestrictionDate {
+    final normalized = restrictionDate.trim();
+    if (normalized.isEmpty) return null;
+    return DateTime.tryParse(normalized);
+  }
+
+  factory VenderRestrictiveListDebt.fromJson(Map<String, dynamic> json) {
+    return VenderRestrictiveListDebt(
+      recipient: _readString(json, const ['destinatario', 'Destinatario']),
+      restrictionDate: _readString(json, const [
+        'fechaRestriccion',
+        'FechaRestriccion',
+      ]),
+      guideNumber: _readString(json, const ['idGuia', 'IdGuia', 'numeroGuia']),
+      value:
+          _readDouble(json, const [
+            'valor',
+            'Valor',
+            'valorTotal',
+          ])?.toDouble() ??
+          0,
+      raw: json,
+    );
+  }
+}
+
+class VenderRestrictiveListClient {
+  const VenderRestrictiveListClient({
+    required this.name,
+    required this.document,
+    required this.phone,
+    required this.email,
+    required this.address,
+    required this.debts,
+  });
+
+  final String name;
+  final String document;
+  final String phone;
+  final String email;
+  final String address;
+  final List<VenderRestrictiveListDebt> debts;
+
+  bool get hasDebts => debts.isNotEmpty;
+
+  factory VenderRestrictiveListClient.fromJson(Map<String, dynamic> json) {
+    return VenderRestrictiveListClient(
+      name: _readString(json, const ['nombre', 'Nombre']),
+      document: _readString(json, const ['documento', 'Documento']),
+      phone: _readString(json, const ['celular', 'Celular']),
+      email: _readString(json, const ['email', 'Email']),
+      address: _readString(json, const ['direccion', 'Direccion']),
+      debts: _readList(json, const [
+        'deudas',
+        'Deudas',
+      ]).map(VenderRestrictiveListDebt.fromJson).toList(),
+    );
+  }
+
+  factory VenderRestrictiveListClient.empty() {
+    return const VenderRestrictiveListClient(
+      name: '',
+      document: '',
+      phone: '',
+      email: '',
+      address: '',
+      debts: [],
+    );
+  }
+}
+
+enum VenderRestrictiveListAction { continueCollect, continueCash, cancelSale }
+
+class VenderRestrictiveListResult {
+  const VenderRestrictiveListResult({
+    required this.sender,
+    required this.recipient,
+    required this.validRecipientDebts,
+    required this.recipientWarningMinimum,
+    required this.recipientWarningMaximum,
+    this.raw = const <String, Object?>{},
+  });
+
+  final VenderRestrictiveListClient sender;
+  final VenderRestrictiveListClient recipient;
+  final List<VenderRestrictiveListDebt> validRecipientDebts;
+  final int recipientWarningMinimum;
+  final int recipientWarningMaximum;
+  final Map<String, Object?> raw;
+
+  bool get senderHasDebts => sender.hasDebts;
+
+  bool get recipientHasWarning {
+    final count = validRecipientDebts.length;
+    return count >= recipientWarningMinimum && count <= recipientWarningMaximum;
+  }
+
+  bool get recipientHasRestriction =>
+      validRecipientDebts.length > recipientWarningMaximum;
+
+  bool get recipientHasDebts => recipientHasWarning || recipientHasRestriction;
+
+  bool get hasAnyRestriction => senderHasDebts || recipientHasDebts;
+
+  double get senderDebtTotal =>
+      sender.debts.fold(0, (total, debt) => total + debt.value);
+
+  factory VenderRestrictiveListResult.fromJson(
+    Map<String, dynamic> json, {
+    required String recipientFilter,
+  }) {
+    final filter = _parseRestrictiveListFilter(recipientFilter);
+    final recipient = VenderRestrictiveListClient.fromJson(
+      _readMap(json, const ['destinatario', 'Destinatario']),
+    );
+    return VenderRestrictiveListResult(
+      sender: VenderRestrictiveListClient.fromJson(
+        _readMap(json, const ['remitente', 'Remitente']),
+      ),
+      recipient: recipient,
+      validRecipientDebts: _recipientDebtsInRange(
+        recipient.debts,
+        days: filter.days,
+      ),
+      recipientWarningMinimum: filter.minimum,
+      recipientWarningMaximum: filter.maximum,
       raw: json,
     );
   }
@@ -779,6 +971,47 @@ class VenderPickupExecutionResult {
       raw: json,
     );
   }
+}
+
+class _RestrictiveListFilter {
+  const _RestrictiveListFilter({
+    required this.days,
+    required this.minimum,
+    required this.maximum,
+  });
+
+  final int days;
+  final int minimum;
+  final int maximum;
+}
+
+_RestrictiveListFilter _parseRestrictiveListFilter(String value) {
+  final parts = value
+      .split(',')
+      .map((part) => int.tryParse(part.trim()) ?? 0)
+      .toList();
+  final days = parts.isNotEmpty && parts[0] > 0 ? parts[0] : 90;
+  final minimum = parts.length > 1 && parts[1] > 0 ? parts[1] : 2;
+  final maximum = parts.length > 2 && parts[2] > 0 ? parts[2] : 3;
+  return _RestrictiveListFilter(days: days, minimum: minimum, maximum: maximum);
+}
+
+List<VenderRestrictiveListDebt> _recipientDebtsInRange(
+  List<VenderRestrictiveListDebt> debts, {
+  required int days,
+}) {
+  final now = DateTime.now();
+  final todayLimit = DateTime(now.year, now.month, now.day, 23, 59, 59);
+  final lowerLimit = DateTime(
+    now.year,
+    now.month,
+    now.day,
+  ).subtract(Duration(days: days));
+  return debts.where((debt) {
+    final date = debt.parsedRestrictionDate;
+    if (date == null) return false;
+    return !date.isBefore(lowerLimit) && !date.isAfter(todayLimit);
+  }).toList();
 }
 
 class VenderPaymentMethods {

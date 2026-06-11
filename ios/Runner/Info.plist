@@ -32,6 +32,10 @@
 	<string>$(YAAP_PASSWORD_QA)</string>
 	<key>ControllerYaapPasswordProduccion</key>
 	<string>$(YAAP_PASSWORD)</string>
+	<key>ControllerListaRestrictivaUser</key>
+	<string>$(LISTA_RESTRICTIVA_USER_SECRET)</string>
+	<key>ControllerListaRestrictivaPassword</key>
+	<string>$(LISTA_RESTRICTIVA_PASSWORD_SECRET)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>LSApplicationQueriesSchemes</key>

@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import '../../../shared/network/controller_api_config.dart';
 import '../../../shared/network/controller_http_client.dart';
+import '../../../shared/native/controller_native_bridge.dart';
 import '../../../shared/security/controller_id_key_provider.dart';
 import '../../login/login.dart';
 import '../models/vender_models.dart';
@@ -14,9 +15,11 @@ class VenderRemoteRepository {
     Dio? dio,
     ControllerHttpClient? httpClient,
     ControllerIdKeyProvider? idKeyProvider,
+    ControllerNativeBridge? nativeBridge,
   }) : _dio = dio ?? Dio(),
        _httpClient = httpClient ?? ControllerHttpClient(dio: dio),
-       _idKeyProvider = idKeyProvider ?? ControllerIdKeyProvider(dio: dio);
+       _idKeyProvider = idKeyProvider ?? ControllerIdKeyProvider(dio: dio),
+       _nativeBridge = nativeBridge ?? ControllerNativeBridge();
 
   static const _geoUser = 'user-cognitooauth2';
   static const _geoPassword = 'SW50ZXIyMDIxKg==';
@@ -29,6 +32,7 @@ class VenderRemoteRepository {
   final Dio _dio;
   final ControllerHttpClient _httpClient;
   final ControllerIdKeyProvider _idKeyProvider;
+  final ControllerNativeBridge _nativeBridge;
 
   Future<Map<String, dynamic>?> fetchPreenvio(
     ControllerApiConfig config,
@@ -92,6 +96,83 @@ class VenderRemoteRepository {
     return VenderPersonRemoteData.fromJson(json);
   }
 
+  Future<String> fetchRestrictiveListRecipientFilter({
+    required ControllerApiConfig config,
+  }) async {
+    final token = await _fetchRestrictiveListToken(config);
+    final client = _plainClient(config.listaRestrictivaBaseUrl);
+    final response = await client.get<dynamic>(
+      'ListaRestrictiva/ConsultarParametros/RangosDestinatarioLR',
+      options: Options(
+        headers: {'IdToken': token},
+        validateStatus: (status) => status != null && status < 600,
+      ),
+    );
+    final statusCode = response.statusCode ?? 0;
+    if (statusCode < 200 || statusCode >= 300) return '';
+    final list = _findList(response.data) ?? const <dynamic>[];
+    for (final item in list) {
+      final map = _asMapOrNull(item);
+      final value = map == null
+          ? ''
+          : _findString(map, const ['valorParametro', 'ValorParametro']);
+      if (value.trim().isNotEmpty) return value.trim();
+    }
+    return '';
+  }
+
+  Future<VenderRestrictiveListResult> validateRestrictiveList({
+    required ControllerApiConfig config,
+    required String recipientFilter,
+    required String senderIdentificationType,
+    required String senderDocument,
+    required String senderPhone,
+    required String recipientIdentificationType,
+    required String recipientDocument,
+    required String recipientPhone,
+  }) async {
+    final lrToken = await _fetchRestrictiveListToken(config);
+    final appToken = (await _loginIntegration(config)).token;
+    final client = _plainClient(config.listaRestrictivaBaseUrl);
+    final response = await client.post<dynamic>(
+      'ListaRestrictiva/ConsultaDeudasClientesLR',
+      data: {
+        'idOpcion': 0,
+        'tokenApp': appToken,
+        'esApp': true,
+        'requestConsultarClientesLR': {
+          'filtroRemitente': {
+            'tipoDocumento': senderIdentificationType,
+            'documento': senderDocument,
+            'celular': senderPhone,
+          },
+          'filtroDestinatario': {
+            'tipoDocumento': recipientIdentificationType,
+            'documento': recipientDocument,
+            'celular': recipientPhone,
+          },
+        },
+      },
+      options: Options(
+        headers: {'IdToken': lrToken},
+        validateStatus: (status) => status != null && status < 600,
+      ),
+    );
+    final statusCode = response.statusCode ?? 0;
+    if (statusCode < 200 || statusCode >= 300 || response.data == null) {
+      throw VenderRemoteException(
+        'No fue posible consultar lista restrictiva. Codigo HTTP $statusCode.',
+      );
+    }
+    final root = _asMap(response.data);
+    final payload =
+        _asMapOrNull(root['data']) ?? _asMapOrNull(root['Data']) ?? root;
+    return VenderRestrictiveListResult.fromJson(
+      payload,
+      recipientFilter: recipientFilter,
+    );
+  }
+
   Future<VenderGeoAddress> geocodeAddress({
     required ControllerApiConfig config,
     required AppInformation appInformation,
@@ -140,6 +221,56 @@ class VenderRemoteRepository {
       );
     }
     return address;
+  }
+
+  Future<bool> isDifficultAccessZone({
+    required ControllerApiConfig config,
+    required AppInformation appInformation,
+    required String localityId,
+    required String zoneDescription,
+  }) async {
+    final zone = zoneDescription.trim();
+    if (localityId.trim().isEmpty || zone.isEmpty) return false;
+    final client = _httpClient.client(
+      config.controllerBaseUrl,
+      headerSource: appInformation,
+    );
+    final response = await client.post<dynamic>(
+      'ParametrosFramework/GIZonaDificilAcceso',
+      data: {'IdLocalidad': localityId.trim(), 'ZonaDescripcion': zone},
+      options: Options(headers: const {'Usuario': 'usuario'}),
+    );
+    final value = response.data;
+    if (value is bool) return value;
+    if (value is String) return value.trim().toLowerCase() == 'true';
+    if (value is num) return value != 0;
+    return false;
+  }
+
+  Future<List<VenderDifficultAccessCenter>> fetchDifficultAccessCenters({
+    required ControllerApiConfig config,
+    required AppInformation appInformation,
+    required String localityId,
+    required String address,
+  }) async {
+    if (localityId.trim().isEmpty || address.trim().isEmpty) return const [];
+    final client = _httpClient.client(
+      config.controllerBaseUrl,
+      headerSource: appInformation,
+    );
+    final response = await client.post<dynamic>(
+      'CentrosServicio/GetCentrosServiciosDificilAcceso',
+      data: {'IdLocalidad': localityId.trim(), 'Direccion': address.trim()},
+      options: Options(headers: const {'Usuario': 'usuario'}),
+    );
+    final list = _findList(response.data) ?? const <dynamic>[];
+    return list
+        .whereType<Object?>()
+        .map(_asMapOrNull)
+        .whereType<Map<String, dynamic>>()
+        .map(VenderDifficultAccessCenter.fromJson)
+        .where((center) => center.displayName.isNotEmpty)
+        .toList();
   }
 
   Future<List<VenderSupply>> refreshSupplies({
@@ -332,6 +463,42 @@ class VenderRemoteRepository {
     if (token.trim().isEmpty) {
       throw const VenderRemoteException(
         'No fue posible obtener token de Torre Direcciones.',
+      );
+    }
+    return token;
+  }
+
+  Future<String> _fetchRestrictiveListToken(ControllerApiConfig config) async {
+    final user = await _nativeBridge.listaRestrictivaUser();
+    final password = await _nativeBridge.listaRestrictivaPassword();
+    if (user.trim().isEmpty || password.trim().isEmpty) {
+      throw const VenderRemoteException(
+        'No se encontraron credenciales de lista restrictiva.',
+      );
+    }
+    final client = _plainClient(config.listaRestrictivaBaseUrl);
+    final response = await client.post<dynamic>(
+      'Seguridad/ObtenerToken',
+      data: {'usuario': user, 'password': password},
+      options: Options(
+        validateStatus: (status) => status != null && status < 600,
+      ),
+    );
+    final statusCode = response.statusCode ?? 0;
+    if (statusCode < 200 || statusCode >= 300 || response.data == null) {
+      throw VenderRemoteException(
+        'No fue posible autenticar lista restrictiva. Codigo HTTP $statusCode.',
+      );
+    }
+    final token = _findString(_asMap(response.data), const [
+      'idToken',
+      'IdToken',
+      'token',
+      'Token',
+    ]);
+    if (token.trim().isEmpty) {
+      throw const VenderRemoteException(
+        'No fue posible obtener token de lista restrictiva.',
       );
     }
     return token;

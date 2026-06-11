@@ -995,8 +995,17 @@ ORDER BY id ASC
 
   Map<String, Object?> _geo(Map<String, Object?> person) {
     final value = person['geo'];
-    if (value is Map<String, Object?>) return value;
-    if (value is Map) return Map<String, Object?>.from(value);
+    if (value is Map<String, Object?>) {
+      final data = value['data'] ?? value['Data'];
+      if (data is Map) return Map<String, Object?>.from(data);
+      return value;
+    }
+    if (value is Map) {
+      final map = Map<String, Object?>.from(value);
+      final data = map['data'] ?? map['Data'];
+      if (data is Map) return Map<String, Object?>.from(data);
+      return map;
+    }
     return const <String, Object?>{};
   }
 
@@ -1005,7 +1014,17 @@ ORDER BY id ASC
     final lowerIndex = {
       for (final entry in geo.entries) entry.key.toLowerCase(): entry.value,
     };
-    return _stringValue(geo[key] ?? lowerIndex[key.toLowerCase()]);
+    final normalizedKey = key.toLowerCase();
+    final fallbackKey = normalizedKey == 'microzona'
+        ? 'zona2'
+        : normalizedKey == 'macrozona'
+        ? 'zona3'
+        : '';
+    return _stringValue(
+      geo[key] ??
+          lowerIndex[normalizedKey] ??
+          (fallbackKey.isEmpty ? null : lowerIndex[fallbackKey]),
+    );
   }
 
   int _geoInt(Map<String, Object?> person, String key) {

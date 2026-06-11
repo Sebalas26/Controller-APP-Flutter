@@ -69,6 +69,16 @@ android {
             "YAAP_PASSWORD",
             (apikeyProperties["YAAP_PASSWORD"] as String?) ?: "\"\""
         )
+        buildConfigField(
+            "String",
+            "LISTA_RESTRICTIVA_USER_SECRET",
+            (apikeyProperties["LISTA_RESTRICTIVA_USER_SECRET"] as String?) ?: "\"\""
+        )
+        buildConfigField(
+            "String",
+            "LISTA_RESTRICTIVA_PASSWORD_SECRET",
+            (apikeyProperties["LISTA_RESTRICTIVA_PASSWORD_SECRET"] as String?) ?: "\"\""
+        )
     }
 
     buildFeatures {

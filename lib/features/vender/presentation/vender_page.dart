@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/network/controller_api_config.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../login/login.dart';
+import '../models/vender_models.dart';
 import 'controllers/vender_flow_controller.dart';
 import 'views/vender_admission_success_view.dart';
 import 'views/vender_billing_summary_view.dart';
@@ -12,7 +13,9 @@ import 'views/vender_payment_view.dart';
 import 'views/vender_pickup_closed_view.dart';
 import 'views/vender_settlement_view.dart';
 import 'views/vender_summary_view.dart';
+import 'widgets/vender_difficult_access_sheet.dart';
 import 'widgets/vender_form_widgets.dart';
+import 'widgets/vender_restrictive_list_sheet.dart';
 
 class VenderPage extends StatefulWidget {
   const VenderPage({
@@ -236,7 +239,7 @@ class _VenderPageState extends State<VenderPage> {
                   icon: _footerIcon(),
                   onPressed: _controller.saving
                       ? null
-                      : () => _runAction(_controller.nextStep),
+                      : () => _runAction(_nextStep),
                 ),
               ),
             ],
@@ -267,6 +270,41 @@ class _VenderPageState extends State<VenderPage> {
           : Icons.payments_outlined;
     }
     return Icons.arrow_forward;
+  }
+
+  Future<void> _nextStep() async {
+    await _controller.nextStep();
+    if (!mounted) return;
+
+    while (mounted) {
+      if (_controller.shouldShowDifficultAccessSelector) {
+        final selected = await showVenderDifficultAccessSheet(
+          context,
+          centers: _controller.difficultAccessCenters,
+        );
+        if (selected == null) return;
+        await _controller.confirmDifficultAccessCenter(selected);
+        await _controller.nextStep();
+        continue;
+      }
+
+      final restrictiveListResult = _controller.pendingRestrictiveListResult;
+      if (restrictiveListResult?.hasAnyRestriction == true) {
+        final action = await showVenderRestrictiveListSheet(
+          context,
+          result: restrictiveListResult!,
+          senderName: _controller.senderName.text,
+          recipientName: _controller.recipientName.text,
+        );
+        if (action == null) return;
+        await _controller.resolveRestrictiveList(action);
+        if (action == VenderRestrictiveListAction.cancelSale) return;
+        await _controller.nextStep();
+        continue;
+      }
+
+      return;
+    }
   }
 
   Future<void> _runAction(Future<void> Function() action) async {

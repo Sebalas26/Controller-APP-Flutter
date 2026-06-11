@@ -70,6 +70,8 @@ class MainActivity : FlutterActivity() {
                 "getYaapPasswordPruebas" -> result.success(BuildConfig.YAAP_PASSWORD_PRUEBAS)
                 "getYaapPasswordQa" -> result.success(BuildConfig.YAAP_PASSWORD_QA)
                 "getYaapPasswordProduccion" -> result.success(BuildConfig.YAAP_PASSWORD)
+                "getListaRestrictivaUser" -> result.success(BuildConfig.LISTA_RESTRICTIVA_USER_SECRET)
+                "getListaRestrictivaPassword" -> result.success(BuildConfig.LISTA_RESTRICTIVA_PASSWORD_SECRET)
                 "hasBluetoothPrinter" -> result.success(hasBluetoothPrinter())
                 "printPdfFile" -> printPdfFile(call, result)
                 "printSewooTest" -> printSewooTest(call, result)

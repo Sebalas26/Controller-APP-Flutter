@@ -9,6 +9,7 @@ class ControllerApiConfig {
     required this.serviciosAgilesBaseUrl,
     required this.yaapBaseUrl,
     required this.preenvioBaseUrl,
+    required this.listaRestrictivaBaseUrl,
     required this.geoDireccionBaseUrl,
     required this.geoRefTokenBaseUrl,
     required this.admisionOfflineBaseUrl,
@@ -19,6 +20,8 @@ class ControllerApiConfig {
     required this.auditoriaPesosBaseUrl,
     required this.auditoriaAuthBaseUrl,
     required this.mensajeTextoBaseUrl,
+    required this.apoyosBaseUrl,
+    required this.asignacionGuiasBaseUrl,
     required this.mediosPagoLegacyBaseUrl,
     required this.mediosPagoBaseUrl,
     required this.mediosPagoAuthBaseUrl,
@@ -34,6 +37,7 @@ class ControllerApiConfig {
   final String serviciosAgilesBaseUrl;
   final String yaapBaseUrl;
   final String preenvioBaseUrl;
+  final String listaRestrictivaBaseUrl;
   final String geoDireccionBaseUrl;
   final String geoRefTokenBaseUrl;
   final String admisionOfflineBaseUrl;
@@ -44,6 +48,8 @@ class ControllerApiConfig {
   final String auditoriaPesosBaseUrl;
   final String auditoriaAuthBaseUrl;
   final String mensajeTextoBaseUrl;
+  final String apoyosBaseUrl;
+  final String asignacionGuiasBaseUrl;
   final String mediosPagoLegacyBaseUrl;
   final String mediosPagoBaseUrl;
   final String mediosPagoAuthBaseUrl;

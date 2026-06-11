@@ -96,6 +96,8 @@ class VenderFlowController extends ChangeNotifier {
 
   VenderGeoAddress? senderGeoAddress;
   VenderGeoAddress? recipientGeoAddress;
+  List<VenderDifficultAccessCenter> difficultAccessCenters = const [];
+  VenderDifficultAccessCenter? selectedDifficultAccessCenter;
   Map<String, dynamic>? preenvioData;
   Map<String, dynamic>? guideData;
 
@@ -115,6 +117,13 @@ class VenderFlowController extends ChangeNotifier {
   String? errorMessage;
   VenderAdmissionSuccessState? admissionSuccessState;
   VenderCollectionState? collectionState;
+  bool difficultAccessRequired = false;
+  String? _lastDifficultAccessValidationKey;
+  VenderRestrictiveListResult? pendingRestrictiveListResult;
+  String? _lastRestrictiveListValidationKey;
+  bool _restrictiveListAccepted = false;
+  final Map<VenderPersonKind, String> _lastCustomerKeyLookup = {};
+  final Set<VenderPersonKind> _customerKeyLookupsInProgress = {};
 
   double get finalWeight {
     return math.max(
@@ -128,6 +137,15 @@ class VenderFlowController extends ChangeNotifier {
   bool get hasCatalogs => catalogs?.hasAdmissionCatalogs ?? false;
 
   bool get hasAvailableSupplies => (catalogs?.availableSupplies ?? 0) > 0;
+
+  bool get shouldShowDifficultAccessSelector {
+    return difficultAccessRequired &&
+        selectedDifficultAccessCenter == null &&
+        difficultAccessCenters.isNotEmpty;
+  }
+
+  bool get shouldShowRestrictiveListDialog =>
+      pendingRestrictiveListResult?.hasAnyRestriction == true;
 
   Future<void> initialize() async {
     try {
@@ -188,7 +206,11 @@ class VenderFlowController extends ChangeNotifier {
         _advanceTo(3);
         return;
       case 3:
-        _validatePerson(VenderPersonKind.recipient);
+        await _remoteGuard(_prepareRecipientForSummary);
+        if (shouldShowDifficultAccessSelector ||
+            shouldShowRestrictiveListDialog) {
+          return;
+        }
         _advanceTo(4);
         return;
       case 4:
@@ -251,47 +273,83 @@ class VenderFlowController extends ChangeNotifier {
   Future<void> quoteServices() async {
     _validateInitial(requireShippingType: false);
     _requireSuppliesAvailable();
-    await _guard(() async {
-      final quotes = await localRepository.quoteServices(
-        appInformation: appInformation,
-        destinationCity: destinationCity!,
-        deliveryType: deliveryType!,
-        paymentMethod: paymentMethod ?? const CatalogOption(id: '', label: ''),
-        shippingType: shippingType ?? const CatalogOption(id: '', label: ''),
-        weight: finalWeight,
-        declaredValue: commercialValue,
-      );
-      serviceQuotes = quotes;
-      selectedQuote = quotes.isNotEmpty ? quotes.first : null;
-      statusMessage = quotes.isEmpty
-          ? 'No hay servicios habilitados para los datos ingresados.'
-          : 'Liquidacion calculada con tarifas locales.';
-    });
+    await _guard(_quoteServicesFromCurrentData);
   }
 
-  Future<void> lookupPerson(VenderPersonKind kind) async {
+  Future<VenderPersonRemoteData?> lookupPerson(VenderPersonKind kind) {
     _validatePersonIdentity(kind);
-    final type = _identificationType(kind)!;
-    await _remoteGuard(() async {
-      final result = await remoteRepository.lookupCustomerKey(
-        config: apiConfig,
-        appInformation: appInformation,
-        localityId: kind == VenderPersonKind.sender
-            ? appInformation.idCiudad
-            : destinationCity?.id ?? '',
-        identificationType: type.id,
-        document: _document(kind).text.trim(),
-        phone: _phone(kind).text.trim(),
-      );
-      if (result.principal.hasIdentity && !result.requiresConfirmation) {
-        _fillPerson(kind, result.principal);
-      }
-      statusMessage = result.message.trim().isNotEmpty
-          ? result.message
-          : result.requiresConfirmation
-          ? 'El cliente requiere confirmacion antes de usar sus datos.'
-          : 'Cliente consultado en Torre Direcciones.';
-    });
+    return lookupPersonFromFocus(kind, force: true);
+  }
+
+  Future<VenderPersonRemoteData?> lookupPersonFromFocus(
+    VenderPersonKind kind, {
+    bool force = false,
+  }) async {
+    if (offline) return null;
+    final document = _cleanIdentifier(_document(kind).text);
+    final phone = _digits(_phone(kind).text);
+    if (document.isEmpty || phone.isEmpty) return null;
+    if (preenvioData != null || guideData != null) return null;
+    if (_customerKeyLookupsInProgress.contains(kind)) return null;
+
+    final type = _effectiveIdentificationType(kind);
+    final localityId = kind == VenderPersonKind.sender
+        ? appInformation.idCiudad
+        : destinationCity?.id ?? '';
+    if (localityId.trim().isEmpty) return null;
+
+    final lookupKey = [
+      kind.name,
+      type.id,
+      localityId,
+      document,
+      phone,
+    ].join('|');
+    if (!force && _lastCustomerKeyLookup[kind] == lookupKey) return null;
+
+    _customerKeyLookupsInProgress.add(kind);
+    busyRemote = true;
+    notifyListeners();
+    try {
+      return await _guardValue(() async {
+        final result = await remoteRepository.lookupCustomerKey(
+          config: apiConfig,
+          appInformation: appInformation,
+          localityId: localityId,
+          identificationType: type.id,
+          document: document,
+          phone: phone,
+        );
+        _lastCustomerKeyLookup[kind] = lookupKey;
+        if (result.principal.hasIdentity && !result.requiresConfirmation) {
+          _fillPerson(kind, result.principal);
+        }
+        statusMessage = result.message.trim().isNotEmpty
+            ? result.message
+            : result.requiresConfirmation
+            ? 'El numero ingresado requiere confirmacion.'
+            : 'Cliente consultado en Torre Direcciones.';
+        return result;
+      });
+    } finally {
+      _customerKeyLookupsInProgress.remove(kind);
+      busyRemote = false;
+      notifyListeners();
+    }
+  }
+
+  void acceptCustomerKey(VenderPersonKind kind, VenderPersonRemoteData result) {
+    if (result.principal.hasIdentity) {
+      _fillPerson(kind, result.principal);
+      statusMessage = 'Datos del cliente aplicados a la admision.';
+      notifyListeners();
+    }
+  }
+
+  void cancelCustomerKey(VenderPersonKind kind) {
+    _lastCustomerKeyLookup.remove(kind);
+    statusMessage = 'Verifica cedula y telefono antes de continuar.';
+    notifyListeners();
   }
 
   Future<void> geocodePerson(VenderPersonKind kind) async {
@@ -328,9 +386,254 @@ class VenderFlowController extends ChangeNotifier {
         if (address.neighborhood.trim().isNotEmpty) {
           recipientNeighborhood.text = address.neighborhood;
         }
+        _resetDifficultAccessState();
       }
       statusMessage = 'Direccion georreferenciada correctamente.';
     });
+  }
+
+  Future<void> confirmDifficultAccessCenter(
+    VenderDifficultAccessCenter center,
+  ) async {
+    await _guard(() async {
+      selectedDifficultAccessCenter = center;
+      difficultAccessRequired = true;
+      recipientAddress.text = center.displayName;
+      _selectDeliveryTypeById('2');
+      await _quoteServicesFromCurrentData(
+        successMessage:
+            'Zona de dificil acceso seleccionada. Liquidacion recalculada para reclamar en oficina.',
+      );
+    });
+  }
+
+  Future<void> _prepareRecipientForSummary() async {
+    _validatePerson(VenderPersonKind.recipient);
+    if (offline) return;
+    await _validateRecipientDifficultAccess();
+    if (shouldShowDifficultAccessSelector) return;
+    await _validateRestrictiveListBeforeSummary();
+  }
+
+  Future<void> _validateRestrictiveListBeforeSummary() async {
+    pendingRestrictiveListResult = null;
+    if (!_isRestrictiveListEnabled()) return;
+    if (!_isCollectPaymentSelected()) return;
+
+    final senderType = _effectiveIdentificationType(VenderPersonKind.sender);
+    final recipientType = _effectiveIdentificationType(
+      VenderPersonKind.recipient,
+    );
+    final key = [
+      senderType.id,
+      _cleanIdentifier(senderDocument.text),
+      _digits(senderPhone.text),
+      recipientType.id,
+      _cleanIdentifier(recipientDocument.text),
+      _digits(recipientPhone.text),
+      paymentMethod?.id ?? '',
+    ].join('|');
+    if (_restrictiveListAccepted && _lastRestrictiveListValidationKey == key) {
+      return;
+    }
+
+    var recipientFilter =
+        catalogs?.parameters['RangosDestinatarioLR']?.trim() ?? '';
+    if (recipientFilter.isEmpty) {
+      recipientFilter = await remoteRepository
+          .fetchRestrictiveListRecipientFilter(config: apiConfig);
+    }
+    if (recipientFilter.trim().isEmpty) recipientFilter = '90,2,3';
+
+    final result = await remoteRepository.validateRestrictiveList(
+      config: apiConfig,
+      recipientFilter: recipientFilter,
+      senderIdentificationType: senderType.id,
+      senderDocument: _cleanIdentifier(senderDocument.text),
+      senderPhone: _digits(senderPhone.text),
+      recipientIdentificationType: recipientType.id,
+      recipientDocument: _cleanIdentifier(recipientDocument.text),
+      recipientPhone: _digits(recipientPhone.text),
+    );
+    _lastRestrictiveListValidationKey = key;
+    _restrictiveListAccepted = false;
+    if (result.hasAnyRestriction) {
+      pendingRestrictiveListResult = result;
+      statusMessage = 'Cliente encontrado en lista restrictiva.';
+      return;
+    }
+    statusMessage = 'Cliente validado sin novedad en lista restrictiva.';
+  }
+
+  Future<void> resolveRestrictiveList(
+    VenderRestrictiveListAction action,
+  ) async {
+    final result = pendingRestrictiveListResult;
+    if (result == null) return;
+    switch (action) {
+      case VenderRestrictiveListAction.continueCollect:
+        _restrictiveListAccepted = true;
+        pendingRestrictiveListResult = null;
+        statusMessage = 'Continua admision al cobro.';
+        notifyListeners();
+        return;
+      case VenderRestrictiveListAction.continueCash:
+        _selectPaymentMethodAsCash();
+        await _quoteServicesFromCurrentData(
+          successMessage: 'Forma de pago actualizada a contado.',
+        );
+        _restrictiveListAccepted = true;
+        pendingRestrictiveListResult = null;
+        notifyListeners();
+        return;
+      case VenderRestrictiveListAction.cancelSale:
+        _clearRecipientData();
+        pendingRestrictiveListResult = null;
+        _restrictiveListAccepted = false;
+        currentStep = 3;
+        highestStep = math.max(highestStep, 3);
+        statusMessage = 'Venta cancelada para este destinatario.';
+        notifyListeners();
+        return;
+    }
+  }
+
+  Future<void> _validateRecipientDifficultAccess() async {
+    if (selectedDifficultAccessCenter != null && difficultAccessRequired) {
+      return;
+    }
+
+    final localityId = destinationCity?.id.trim() ?? '';
+    if (localityId.isEmpty) return;
+
+    var geo = recipientGeoAddress;
+    if (geo == null || _difficultAccessZoneDescription(geo).isEmpty) {
+      geo = await _geocodeRecipientForDifficultAccess(localityId);
+    }
+
+    final zoneDescription = _difficultAccessZoneDescription(geo);
+    if (zoneDescription.isEmpty) {
+      _resetDifficultAccessState();
+      return;
+    }
+
+    final validationKey = [
+      localityId,
+      zoneDescription,
+      recipientStreet.text.trim(),
+      recipientNumber.text.trim(),
+      recipientAddress.text.trim(),
+    ].join('|');
+    if (_lastDifficultAccessValidationKey == validationKey &&
+        difficultAccessRequired &&
+        difficultAccessCenters.isNotEmpty) {
+      return;
+    }
+    if (_lastDifficultAccessValidationKey == validationKey &&
+        !difficultAccessRequired) {
+      return;
+    }
+
+    final requiresDifficultAccess = await remoteRepository
+        .isDifficultAccessZone(
+          config: apiConfig,
+          appInformation: appInformation,
+          localityId: localityId,
+          zoneDescription: zoneDescription,
+        );
+    _lastDifficultAccessValidationKey = validationKey;
+
+    if (!requiresDifficultAccess) {
+      difficultAccessRequired = false;
+      difficultAccessCenters = const [];
+      selectedDifficultAccessCenter = null;
+      statusMessage = 'Direccion destino validada sin novedad de acceso.';
+      return;
+    }
+
+    final centers = await remoteRepository.fetchDifficultAccessCenters(
+      config: apiConfig,
+      appInformation: appInformation,
+      localityId: localityId,
+      address: recipientAddress.text.trim(),
+    );
+    if (centers.isEmpty) {
+      throw const VenderRemoteException(
+        'La direccion es zona de dificil acceso, pero no se encontraron puntos cercanos.',
+      );
+    }
+
+    difficultAccessRequired = true;
+    difficultAccessCenters = centers;
+    selectedDifficultAccessCenter = null;
+    statusMessage =
+        'Zona de dificil acceso detectada. Selecciona una oficina destino.';
+  }
+
+  Future<VenderGeoAddress> _geocodeRecipientForDifficultAccess(
+    String cityId,
+  ) async {
+    final cityHasGeo = await localRepository.cityHasGeoReference(cityId);
+    final specialCity = await localRepository.isSpecialCity(cityId);
+    final cardinality = await localRepository.cityHasCardinality(cityId);
+    final address = await remoteRepository.geocodeAddress(
+      config: apiConfig,
+      appInformation: appInformation,
+      cityId: cityId,
+      addressType: recipientAddressType!,
+      propertyType: recipientPropertyType!,
+      number: recipientNumber.text.trim(),
+      street: recipientStreet.text.trim(),
+      neighborhood: recipientNeighborhood.text.trim(),
+      south: cardinality && recipientSouth,
+      cityHasGeoReference: cityHasGeo,
+      specialCity: specialCity,
+    );
+    recipientGeoAddress = address;
+    recipientAddress.text = address.displayAddress;
+    if (address.neighborhood.trim().isNotEmpty) {
+      recipientNeighborhood.text = address.neighborhood;
+    }
+    return address;
+  }
+
+  String _difficultAccessZoneDescription(VenderGeoAddress geo) {
+    final raw = geo.raw['data'] is Map
+        ? Map<String, Object?>.from(geo.raw['data'] as Map)
+        : geo.raw['Data'] is Map
+        ? Map<String, Object?>.from(geo.raw['Data'] as Map)
+        : geo.raw;
+    final lowerIndex = {
+      for (final entry in raw.entries) entry.key.toLowerCase(): entry.value,
+    };
+    final value =
+        raw['zona2'] ??
+        raw['Zona2'] ??
+        raw['microZona'] ??
+        raw['MicroZona'] ??
+        lowerIndex['zona2'] ??
+        lowerIndex['microzona'] ??
+        geo.microZone;
+    return value.toString().trim();
+  }
+
+  Future<void> _quoteServicesFromCurrentData({String? successMessage}) async {
+    final quotes = await localRepository.quoteServices(
+      appInformation: appInformation,
+      destinationCity: destinationCity!,
+      deliveryType: deliveryType!,
+      paymentMethod: paymentMethod ?? const CatalogOption(id: '', label: ''),
+      shippingType: shippingType ?? const CatalogOption(id: '', label: ''),
+      weight: finalWeight,
+      declaredValue: commercialValue,
+    );
+    serviceQuotes = quotes;
+    selectedQuote = quotes.isNotEmpty ? quotes.first : null;
+    statusMessage =
+        successMessage ??
+        (quotes.isEmpty
+            ? 'No hay servicios habilitados para los datos ingresados.'
+            : 'Liquidacion calculada con tarifas locales.');
   }
 
   Future<void> refreshSupplies({int? targetAvailable}) async {
@@ -760,6 +1063,7 @@ class VenderFlowController extends ChangeNotifier {
     destinationCity = value;
     selectedQuote = null;
     serviceQuotes = const [];
+    _resetDifficultAccessState();
     notifyListeners();
   }
 
@@ -767,11 +1071,14 @@ class VenderFlowController extends ChangeNotifier {
     deliveryType = value;
     selectedQuote = null;
     serviceQuotes = const [];
+    _resetDifficultAccessState();
     notifyListeners();
   }
 
   void selectPaymentMethod(CatalogOption? value) {
     paymentMethod = value;
+    pendingRestrictiveListResult = null;
+    _restrictiveListAccepted = false;
     notifyListeners();
   }
 
@@ -804,6 +1111,7 @@ class VenderFlowController extends ChangeNotifier {
       senderAddressType = value;
     } else {
       recipientAddressType = value;
+      _resetDifficultAccessState();
     }
     notifyListeners();
   }
@@ -813,6 +1121,7 @@ class VenderFlowController extends ChangeNotifier {
       senderPropertyType = value;
     } else {
       recipientPropertyType = value;
+      _resetDifficultAccessState();
     }
     notifyListeners();
   }
@@ -832,6 +1141,7 @@ class VenderFlowController extends ChangeNotifier {
       senderSouth = value;
     } else {
       recipientSouth = value;
+      _resetDifficultAccessState();
     }
     notifyListeners();
   }
@@ -859,7 +1169,83 @@ class VenderFlowController extends ChangeNotifier {
     recipientNeighborhood.text = senderNeighborhood.text;
     recipientAddress.text = senderAddress.text;
     recipientSouth = senderSouth;
+    _resetDifficultAccessState();
     notifyListeners();
+  }
+
+  bool _isRestrictiveListEnabled() {
+    final raw = (catalogs?.parameters['ListRestCons'] ?? '').trim();
+    return raw == '1' || raw.toLowerCase() == 'true';
+  }
+
+  bool _isCollectPaymentSelected() {
+    final method = paymentMethod;
+    if (method == null) return false;
+    final label = method.label.toLowerCase();
+    return method.id.trim() == VenderPaymentMethods.collect.toString() ||
+        label.contains('cobro');
+  }
+
+  void _selectPaymentMethodAsCash() {
+    final options = catalogs?.paymentMethods ?? const <CatalogOption>[];
+    CatalogOption? match;
+    for (final option in options) {
+      final label = option.label.toLowerCase();
+      if (option.id.trim() == VenderPaymentMethods.cash.toString() ||
+          label.contains('contado') ||
+          label.contains('efectivo')) {
+        match = option;
+        break;
+      }
+    }
+    paymentMethod = match ?? const CatalogOption(id: '1', label: 'Contado');
+    selectedQuote = null;
+    serviceQuotes = const [];
+  }
+
+  void _clearRecipientData() {
+    for (final controller in [
+      recipientDocument,
+      recipientPhone,
+      recipientName,
+      recipientFirstLastName,
+      recipientSecondLastName,
+      recipientStreet,
+      recipientNumber,
+      recipientComplement,
+      recipientNeighborhood,
+      recipientAddress,
+      recipientEmail,
+    ]) {
+      controller.clear();
+    }
+    recipientGeoAddress = null;
+    recipientSouth = false;
+    recipientNotification = true;
+    _lastCustomerKeyLookup.remove(VenderPersonKind.recipient);
+    _resetDifficultAccessState();
+  }
+
+  void _selectDeliveryTypeById(String id) {
+    final normalized = id.trim();
+    CatalogOption? match;
+    for (final option in [...deliveryTypes, ...?catalogs?.deliveryTypes]) {
+      if (option.id.trim() == normalized) {
+        match = option;
+        break;
+      }
+    }
+    deliveryType =
+        match ?? CatalogOption(id: normalized, label: 'RECLAME EN OFICINA');
+    selectedQuote = null;
+    serviceQuotes = const [];
+  }
+
+  void _resetDifficultAccessState() {
+    difficultAccessRequired = false;
+    difficultAccessCenters = const [];
+    selectedDifficultAccessCenter = null;
+    _lastDifficultAccessValidationKey = null;
   }
 
   VenderDraft _buildDraft() {
@@ -921,9 +1307,10 @@ class VenderFlowController extends ChangeNotifier {
     final geo = kind == VenderPersonKind.sender
         ? senderGeoAddress
         : recipientGeoAddress;
+    final identificationType = _effectiveIdentificationType(kind);
     return {
-      'identificationTypeId': _identificationType(kind)?.id,
-      'identificationTypeLabel': _identificationType(kind)?.label,
+      'identificationTypeId': identificationType.id,
+      'identificationTypeLabel': identificationType.label,
       'document': _document(kind).text.trim(),
       'phone': _phone(kind).text.trim(),
       'name': _name(kind).text.trim(),
@@ -944,22 +1331,24 @@ class VenderFlowController extends ChangeNotifier {
           ? senderNotification
           : recipientNotification,
       'geo': geo?.raw,
+      if (kind == VenderPersonKind.recipient)
+        'difficultAccess': {
+          'required': difficultAccessRequired,
+          'selectedCenter': selectedDifficultAccessCenter?.raw,
+        },
     };
   }
 
   void _applyDefaults(VenderCatalogs loadedCatalogs) {
+    final identificationType = _defaultIdentificationType(loadedCatalogs);
     destinationCity ??= _firstOrNull(loadedCatalogs.destinationCities);
     deliveryType ??= _firstOrNull(deliveryTypes);
     paymentMethod ??= _firstOrNull(loadedCatalogs.paymentMethods);
     shippingType ??= _firstOrNull(shippingTypes);
-    senderIdentificationType ??= _firstOrNull(
-      loadedCatalogs.identificationTypes,
-    );
+    senderIdentificationType ??= identificationType;
     senderAddressType ??= _firstOrNull(loadedCatalogs.addressTypes);
     senderPropertyType ??= _firstOrNull(loadedCatalogs.propertyTypes);
-    recipientIdentificationType ??= _firstOrNull(
-      loadedCatalogs.identificationTypes,
-    );
+    recipientIdentificationType ??= identificationType;
     recipientAddressType ??= _firstOrNull(loadedCatalogs.addressTypes);
     recipientPropertyType ??= _firstOrNull(loadedCatalogs.propertyTypes);
     selectedPackage ??= _firstOrNull(loadedCatalogs.packages);
@@ -1081,6 +1470,12 @@ class VenderFlowController extends ChangeNotifier {
     recipientNotification = true;
     admissionSuccessState = null;
     collectionState = null;
+    pendingRestrictiveListResult = null;
+    _lastRestrictiveListValidationKey = null;
+    _restrictiveListAccepted = false;
+    _lastCustomerKeyLookup.clear();
+    _customerKeyLookupsInProgress.clear();
+    _resetDifficultAccessState();
     errorMessage = null;
     statusMessage = null;
   }
@@ -1089,6 +1484,18 @@ class VenderFlowController extends ChangeNotifier {
     errorMessage = null;
     try {
       await action();
+    } on Object catch (error) {
+      errorMessage = error.toString();
+      rethrow;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<T> _guardValue<T>(Future<T> Function() action) async {
+    errorMessage = null;
+    try {
+      return await action();
     } on Object catch (error) {
       errorMessage = error.toString();
       rethrow;
@@ -1134,7 +1541,6 @@ class VenderFlowController extends ChangeNotifier {
   }
 
   void _validatePersonIdentity(VenderPersonKind kind) {
-    _require(_identificationType(kind) != null, 'Selecciona tipo documento.');
     _require(_document(kind).text.trim().isNotEmpty, 'Ingresa documento.');
     _require(_phone(kind).text.trim().isNotEmpty, 'Ingresa celular.');
   }
@@ -1164,6 +1570,7 @@ class VenderFlowController extends ChangeNotifier {
         senderGeoAddress = address;
       } else {
         recipientGeoAddress = address;
+        _resetDifficultAccessState();
       }
     }
   }
@@ -1201,6 +1608,27 @@ class VenderFlowController extends ChangeNotifier {
       kind == VenderPersonKind.sender
       ? senderIdentificationType
       : recipientIdentificationType;
+  CatalogOption _effectiveIdentificationType(VenderPersonKind kind) {
+    return _identificationType(kind) ??
+        _defaultIdentificationType(catalogs) ??
+        const CatalogOption(id: 'CC', label: 'CC');
+  }
+
+  CatalogOption? _defaultIdentificationType(VenderCatalogs? source) {
+    final options = source?.identificationTypes ?? const <CatalogOption>[];
+    for (final option in options) {
+      final id = option.id.trim().toUpperCase();
+      final label = option.label.trim().toUpperCase();
+      if (id == 'CC' ||
+          label == 'CC' ||
+          label.contains('CEDULA') ||
+          label.contains('CÉDULA')) {
+        return option;
+      }
+    }
+    return _firstOrNull(options) ?? const CatalogOption(id: 'CC', label: 'CC');
+  }
+
   CatalogOption? _addressType(VenderPersonKind kind) =>
       kind == VenderPersonKind.sender
       ? senderAddressType
@@ -1213,6 +1641,14 @@ class VenderFlowController extends ChangeNotifier {
       kind == VenderPersonKind.sender ? senderSouth : recipientSouth;
 
   T? _firstOrNull<T>(List<T> items) => items.isEmpty ? null : items.first;
+
+  String _cleanIdentifier(String value) {
+    return value.replaceAll(RegExp(r'[^0-9A-Za-z]'), '').trim();
+  }
+
+  String _digits(String value) {
+    return value.replaceAll(RegExp(r'[^0-9]'), '').trim();
+  }
 
   double _readDouble(String value) {
     final text = value.replaceAll(r'$', '').replaceAll(',', '.').trim();

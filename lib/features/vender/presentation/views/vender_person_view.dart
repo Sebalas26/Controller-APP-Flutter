@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/vender_models.dart';
 import '../controllers/vender_flow_controller.dart';
+import '../widgets/vender_customer_key_dialog.dart';
 import '../widgets/vender_form_widgets.dart';
 
 class VenderPersonView extends StatelessWidget {
@@ -35,20 +36,15 @@ class VenderPersonView extends StatelessWidget {
         const SizedBox(height: 8),
         VenderResponsiveRow(
           children: [
-            VenderCatalogDropdown(
-              label: 'Tipo identificacion',
-              options: catalogs.identificationTypes,
-              value: _identificationType,
-              onChanged: (value) =>
-                  controller.setIdentificationType(kind, value),
-              requiredField: true,
-            ),
             VenderTextInput(
               label: 'Identificacion',
               controller: _document,
               keyboardType: TextInputType.number,
               requiredField: true,
               tooltip: 'Ingresa el documento del cliente.',
+              onFocusLost: () {
+                _lookupCustomerKey(context);
+              },
             ),
             VenderTextInput(
               label: 'Celular',
@@ -56,19 +52,11 @@ class VenderPersonView extends StatelessWidget {
               keyboardType: TextInputType.phone,
               requiredField: true,
               tooltip: 'Ingresa el celular del cliente.',
+              onFocusLost: () {
+                _lookupCustomerKey(context);
+              },
             ),
           ],
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-          child: VenderNativeButton(
-            label: 'Consultar cliente',
-            fullWidth: true,
-            icon: const Icon(Icons.manage_search),
-            onPressed: controller.busyRemote
-                ? null
-                : () => runAction(() => controller.lookupPerson(kind)),
-          ),
         ),
         if (!_isSender)
           Padding(
@@ -180,9 +168,21 @@ class VenderPersonView extends StatelessWidget {
     );
   }
 
-  CatalogOption? get _identificationType => _isSender
-      ? controller.senderIdentificationType
-      : controller.recipientIdentificationType;
+  Future<void> _lookupCustomerKey(BuildContext context) async {
+    await runAction(() async {
+      final result = await controller.lookupPersonFromFocus(kind);
+      if (result == null || !result.requiresConfirmation || !context.mounted) {
+        return;
+      }
+      final accepted = await showVenderCustomerKeyDialog(context, result);
+      if (accepted == true) {
+        controller.acceptCustomerKey(kind, result);
+      } else {
+        controller.cancelCustomerKey(kind);
+      }
+    });
+  }
+
   CatalogOption? get _addressType => _isSender
       ? controller.senderAddressType
       : controller.recipientAddressType;

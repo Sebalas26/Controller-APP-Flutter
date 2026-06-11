@@ -90,6 +90,7 @@ class VenderTextInput extends StatelessWidget {
     this.center = false,
     this.tooltip,
     this.textCapitalization = TextCapitalization.none,
+    this.onFocusLost,
   });
 
   final String label;
@@ -101,6 +102,7 @@ class VenderTextInput extends StatelessWidget {
   final bool center;
   final String? tooltip;
   final TextCapitalization textCapitalization;
+  final VoidCallback? onFocusLost;
 
   @override
   Widget build(BuildContext context) {
@@ -108,20 +110,25 @@ class VenderTextInput extends StatelessWidget {
       label: label,
       requiredField: requiredField,
       tooltip: tooltip,
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        maxLines: maxLines,
-        readOnly: readOnly,
-        textCapitalization: textCapitalization,
-        textAlign: center ? TextAlign.center : TextAlign.start,
-        style: const TextStyle(
-          color: AppColors.black,
-          fontFamily: 'Montserrat',
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
+      child: Focus(
+        onFocusChange: (hasFocus) {
+          if (!hasFocus) onFocusLost?.call();
+        },
+        child: TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          readOnly: readOnly,
+          textCapitalization: textCapitalization,
+          textAlign: center ? TextAlign.center : TextAlign.start,
+          style: const TextStyle(
+            color: AppColors.black,
+            fontFamily: 'Montserrat',
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
+          decoration: _underlineDecoration(),
         ),
-        decoration: _underlineDecoration(),
       ),
     );
   }

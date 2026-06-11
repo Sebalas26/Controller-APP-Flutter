@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../reimpresion/reimpresion.dart';
+import '../../asignacion_guias/asignacion_guias.dart';
 import '../../anular_guia/anular_guia.dart';
 import '../../auditoria_pesos/auditoria_pesos.dart';
 import '../../bloques/bloques.dart';
 import '../../entregas/entregas.dart';
+import '../../mis_mensajeros/mis_mensajeros.dart';
 import '../../recoger/recoger.dart';
 import '../../tarjeta_comercial/tarjeta_comercial.dart';
 import '../../vender/vender.dart';
@@ -108,6 +110,30 @@ class ModulePage extends StatelessWidget {
       );
     }
 
+    if (module.id == 'asignar') {
+      return Scaffold(
+        body: SafeArea(
+          child: AsignacionGuiasPage(
+            appInformation: session.appInformation,
+            apiConfig: config.toApiConfig(),
+            offline: session.offline,
+          ),
+        ),
+      );
+    }
+
+    if (module.id == 'mis_mensajeros') {
+      return Scaffold(
+        body: SafeArea(
+          child: MisMensajerosPage(
+            appInformation: session.appInformation,
+            apiConfig: config.toApiConfig(),
+            offline: session.offline,
+          ),
+        ),
+      );
+    }
+
     if (module.id == 'tarjeta') {
       return Scaffold(
         body: SafeArea(
@@ -153,13 +179,21 @@ class ModulePage extends StatelessWidget {
       case 'recoger':
         return const PickupBody();
       case 'asignar':
-        return const AssignmentBody();
+        return AsignacionGuiasPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        );
       case 'mis_pagos':
         return PaymentsBody(config: config);
       case 'estado_cuenta':
         return const AccountStatusBody();
       case 'mis_mensajeros':
-        return const CouriersBody();
+        return MisMensajerosPage(
+          appInformation: session.appInformation,
+          apiConfig: config.toApiConfig(),
+          offline: session.offline,
+        );
       case 'reimprimir':
         return ReimpresionPage(
           appInformation: session.appInformation,
